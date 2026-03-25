@@ -13,6 +13,7 @@ from .tasks import (
     handle_interrupt_task,
 )
 from .diagnostics import handle_diagnostic_execute
+from .inspect import handle_inspect_execute
 from .workspace import handle_get_working_directory
 from .utilities import handle_ping
 
@@ -26,6 +27,8 @@ __all__ = [
     "handle_interrupt_task",
     # Diagnostics
     "handle_diagnostic_execute",
+    # Inspect
+    "handle_inspect_execute",
     # Workspace
     "handle_get_working_directory",
     # Utilities
