@@ -91,6 +91,7 @@ def _execute_single_diagnostic(script_path, future):
     """
     import sys
     import os
+    from io import StringIO
 
     try:
         import itasca  # type: ignore
@@ -99,26 +100,28 @@ def _execute_single_diagnostic(script_path, future):
         with open(script_path, 'r', encoding='utf-8') as f:
             script_content = f.read()
 
-        # Temporarily restore original stdout to avoid mixing with main script output
-        # When main script is running, sys.stdout points to its FileBuffer
-        # Diagnostic output should go to original console, not main script's log
+        # Capture stdout into a buffer so print() output is returned to caller
         old_stdout = sys.stdout
-        sys.stdout = sys.__stdout__  # Python's original stdout
+        capture_buffer = StringIO()
+        sys.stdout = capture_buffer
 
         try:
             # Execute in isolated namespace with itasca available
             exec_context = {"itasca": itasca}
             exec(script_content, exec_context, exec_context)
         finally:
-            sys.stdout = old_stdout  # Restore (back to main script's buffer if running)
+            sys.stdout = old_stdout
 
         # Get result if script defined 'result' variable
         result = exec_context.get("result", None)
+        output = capture_buffer.getvalue()
 
         future.set_result({
             "status": "success",
             "message": "Diagnostic executed via callback",
-            "data": result
+            "output": output,
+            "result": result,
+            "data": result,
         })
 
         logger.debug("Diagnostic completed: %s", os.path.basename(script_path))
