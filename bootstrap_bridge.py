@@ -2,8 +2,9 @@
 """
 PFC Bridge bootstrap script.
 
-Run inside the PFC IPython console:
-    %run C:/path/to/pfc-mcp/pfc-mcp-bridge/bootstrap_bridge.py
+Use it inside PFC in either of these ways:
+1. Copy the file contents into the PFC IPython console and run them
+2. Or save/download this file and execute it in PFC GUI
 
 What it does:
 1. Detects the currently installed `pfc-mcp-bridge`, if any

@@ -10,11 +10,14 @@
 
 ### 一步式引导
 
-在 PFC 的 IPython 控制台中，可以把下面这条 `%run` 作为日常启动入口：
+把下面这个脚本作为日常启动入口：
 
-```python
-%run C:/path/to/pfc-mcp/pfc-mcp-bridge/bootstrap_bridge.py
-```
+`https://raw.githubusercontent.com/yusong652/pfc-mcp/main/pfc-mcp-bridge/bootstrap_bridge.py`
+
+在 PFC 中任选一种方式执行：
+
+- 把文件内容复制到 IPython 控制台里运行
+- 或者先把文件下载到本地，再在 PFC GUI 里执行它
 
 它会这样工作：
 
@@ -22,28 +25,8 @@
 - 如果已经安装，会先显示当前版本，并让用户选择是否在启动前升级到最新版
 - 随后在当前 PFC Python 环境里直接启动 bridge
 
-### 手动安装
-
-在 PFC Python 控制台中安装并启动：
-
-```python
-import sys
-
-if sys.version_info < (3, 10):
-    import pip
-
-    pip.main(["install", "--user", "-U", "pfc-mcp-bridge"])
-else:
-    from pip._internal.cli.main import main as pip_main
-
-    pip_main(["install", "--user", "-U", "pfc-mcp-bridge"])
-
-import pfc_mcp_bridge
-pfc_mcp_bridge.start()
-```
-
 Bridge 会自动检测运行环境：GUI 使用 Qt 定时器，控制台使用阻塞循环。
-在 PFC 的 IPython 控制台里安装 `pfc-mcp-bridge` 时，也会自动安装匹配的 `websockets` 版本：PFC 6/7 使用 `9.1`，PFC 9 使用 `16.0`。这段安装代码会在 PFC 6/7 中调用 `pip.main(...)`，在 PFC 9 中调用 `pip._internal.cli.main.main(...)`。
+bootstrap 脚本也会自动安装匹配的 `websockets` 版本：PFC 6/7 使用 `9.1`，PFC 9 使用 `16.0`。
 
 预期输出：
 
@@ -67,7 +50,7 @@ PFC Bridge Server
 
 | 现象 | 处理方式 |
 |---------|-----|
-| 服务无法启动 | 在 PFC Python/IPython 控制台中重新执行 `%run C:/path/to/pfc-mcp/pfc-mcp-bridge/bootstrap_bridge.py`，或使用上面的按版本安装片段（PFC 6/7 用 `pip.main(...)`，PFC 9 用 `pip._internal.cli.main.main(...)`） |
+| 服务无法启动 | 重新获取 bootstrap 脚本后，在 PFC 中再次运行它：可以把内容重新粘贴到 IPython 控制台，或直接在 PFC GUI 中执行下载好的脚本文件 |
 | PFC 9 中 `websockets` 版本不匹配 | 在 PFC 9 的 IPython 控制台中执行 `from pip._internal.cli.main import main as pip_main; pip_main(["install", "--user", "websockets==16.0"])` |
 | 端口被占用 | 在 PFC Python 中使用 `pfc_mcp_bridge.start(port=9002)`，并将 MCP 服务端环境变量设为 `PFC_MCP_BRIDGE_URL=ws://localhost:9002` |
 | 连接失败 | 确认 bridge 正在运行且端口可用，查看 `.pfc-mcp-bridge/bridge.log` |

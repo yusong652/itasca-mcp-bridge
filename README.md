@@ -10,11 +10,14 @@ Runtime bridge that runs inside a PFC process and enables execution tools for [p
 
 ### One-Step Bootstrap
 
-From the PFC IPython console, you can use one script as the normal startup entrypoint:
+Use this script as the normal startup entrypoint:
 
-```python
-%run C:/path/to/pfc-mcp/pfc-mcp-bridge/bootstrap_bridge.py
-```
+`https://raw.githubusercontent.com/yusong652/pfc-mcp/main/pfc-mcp-bridge/bootstrap_bridge.py`
+
+Inside PFC, either:
+
+- Copy the file contents into the IPython console and run them
+- Or download the file and execute it in PFC GUI
 
 What it does:
 
@@ -22,28 +25,8 @@ What it does:
 - If it is already installed, it shows the current version and asks whether you want to upgrade before startup
 - It then starts the bridge in the current PFC Python environment
 
-### Manual Install
-
-Install and run in the PFC Python console:
-
-```python
-import sys
-
-if sys.version_info < (3, 10):
-    import pip
-
-    pip.main(["install", "--user", "-U", "pfc-mcp-bridge"])
-else:
-    from pip._internal.cli.main import main as pip_main
-
-    pip_main(["install", "--user", "-U", "pfc-mcp-bridge"])
-
-import pfc_mcp_bridge
-pfc_mcp_bridge.start()
-```
-
 The bridge auto-detects the runtime: Qt timer in GUI, blocking loop in console.
-Installing `pfc-mcp-bridge` from the PFC IPython console also installs a matching `websockets` version automatically: `9.1` for PFC 6/7 and `16.0` for PFC 9. The snippet uses `pip.main(...)` on PFC 6/7 and `pip._internal.cli.main.main(...)` on PFC 9.
+The bootstrap script also installs a matching `websockets` version automatically: `9.1` for PFC 6/7 and `16.0` for PFC 9.
 
 Expected output:
 
@@ -67,7 +50,7 @@ PFC Bridge Server
 
 | Symptom | Fix |
 |---------|-----|
-| Server won't start | In the PFC Python/IPython console, rerun `%run C:/path/to/pfc-mcp/pfc-mcp-bridge/bootstrap_bridge.py` or the version-aware install snippet above (`pip.main(...)` on PFC 6/7, `pip._internal.cli.main.main(...)` on PFC 9) |
+| Server won't start | Download the bootstrap script again and rerun it in PFC, either by pasting it into the IPython console or by executing the downloaded file in PFC GUI |
 | `websockets` version mismatch in PFC 9 | In the PFC 9 IPython console, run `from pip._internal.cli.main import main as pip_main; pip_main(["install", "--user", "websockets==16.0"])` |
 | Port in use | Use `pfc_mcp_bridge.start(port=9002)` in PFC Python, then set MCP server env `PFC_MCP_BRIDGE_URL=ws://localhost:9002` |
 | Connection failed | Check bridge is running, port is available, see `.pfc-mcp-bridge/bridge.log` |
