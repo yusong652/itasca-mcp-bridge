@@ -47,6 +47,18 @@ PFC Bridge Server
 | 连接失败 | 确认 bridge 正在运行且端口可用，查看 `.pfc-mcp-bridge/bridge.log` |
 | 无法执行任务 / MCP 无法连接 | 若执行工具返回 `ok=false`、`error.code=bridge_unavailable`、`error.details.reason=cannot connect to bridge service`，请确认已在 PFC 中运行 `pfc_mcp_bridge.start()`，并检查 `PFC_MCP_BRIDGE_URL` 是否与 bridge 地址一致 |
 
+## 开发
+
+从本地源码启动 bridge（无需从 PyPI 安装），在 PFC IPython 控制台中使用 `%run`：
+
+```python
+%run C:/path/to/pfc-mcp/pfc-mcp-bridge/start_bridge.py
+```
+
+> **注意：** 路径使用正斜杠，不要加引号。
+
+效果与 PyPI 安装方式相同，但直接加载源码，修改代码后重启即可生效。
+
 完整 MCP 客户端配置请参考 [pfc-mcp](https://pypi.org/project/pfc-mcp/)。
 
 许可证：MIT（[LICENSE](https://github.com/yusong652/pfc-mcp/blob/main/LICENSE)）。
