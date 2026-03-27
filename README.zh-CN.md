@@ -8,6 +8,22 @@
 
 ## 快速开始
 
+### 一步式引导
+
+在 PFC 的 IPython 控制台中，可以把下面这条 `%run` 作为日常启动入口：
+
+```python
+%run C:/path/to/pfc-mcp/pfc-mcp-bridge/bootstrap_bridge.py
+```
+
+它会这样工作：
+
+- 如果当前还没有安装 `pfc-mcp-bridge`，会先安装最新版本再启动
+- 如果已经安装，会先显示当前版本，并让用户选择是否在启动前升级到最新版
+- 随后在当前 PFC Python 环境里直接启动 bridge
+
+### 手动安装
+
 在 PFC Python 控制台中安装并启动：
 
 ```python
@@ -51,7 +67,7 @@ PFC Bridge Server
 
 | 现象 | 处理方式 |
 |---------|-----|
-| 服务无法启动 | 在 PFC Python/IPython 控制台中重新执行上面的按版本安装片段（PFC 6/7 用 `pip.main(...)`，PFC 9 用 `pip._internal.cli.main.main(...)`） |
+| 服务无法启动 | 在 PFC Python/IPython 控制台中重新执行 `%run C:/path/to/pfc-mcp/pfc-mcp-bridge/bootstrap_bridge.py`，或使用上面的按版本安装片段（PFC 6/7 用 `pip.main(...)`，PFC 9 用 `pip._internal.cli.main.main(...)`） |
 | PFC 9 中 `websockets` 版本不匹配 | 在 PFC 9 的 IPython 控制台中执行 `from pip._internal.cli.main import main as pip_main; pip_main(["install", "--user", "websockets==16.0"])` |
 | 端口被占用 | 在 PFC Python 中使用 `pfc_mcp_bridge.start(port=9002)`，并将 MCP 服务端环境变量设为 `PFC_MCP_BRIDGE_URL=ws://localhost:9002` |
 | 连接失败 | 确认 bridge 正在运行且端口可用，查看 `.pfc-mcp-bridge/bridge.log` |
@@ -61,7 +77,7 @@ PFC Bridge Server
 
 完整本地源码开发流程请参考 [开发者指南：从源码安装与运行](../docs/development/source-install.zh-CN.md)。
 
-从本地源码启动 bridge（无需从 PyPI 安装），在 PFC IPython 控制台中使用 `%run`：
+如果只是想直接从本地源码启动 bridge，而不先从 PyPI 安装，在 PFC IPython 控制台中使用 `%run`：
 
 ```python
 %run C:/path/to/pfc-mcp/pfc-mcp-bridge/start_bridge.py

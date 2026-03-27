@@ -8,7 +8,23 @@ Runtime bridge that runs inside a PFC process and enables execution tools for [p
 
 ## Quick Start
 
-Install and run in PFC Python console:
+### One-Step Bootstrap
+
+From the PFC IPython console, you can use one script as the normal startup entrypoint:
+
+```python
+%run C:/path/to/pfc-mcp/pfc-mcp-bridge/bootstrap_bridge.py
+```
+
+What it does:
+
+- If `pfc-mcp-bridge` is not installed yet, it installs the latest version and starts it
+- If it is already installed, it shows the current version and asks whether you want to upgrade before startup
+- It then starts the bridge in the current PFC Python environment
+
+### Manual Install
+
+Install and run in the PFC Python console:
 
 ```python
 import sys
@@ -51,7 +67,7 @@ PFC Bridge Server
 
 | Symptom | Fix |
 |---------|-----|
-| Server won't start | In the PFC Python/IPython console, rerun the version-aware install snippet above (`pip.main(...)` on PFC 6/7, `pip._internal.cli.main.main(...)` on PFC 9) |
+| Server won't start | In the PFC Python/IPython console, rerun `%run C:/path/to/pfc-mcp/pfc-mcp-bridge/bootstrap_bridge.py` or the version-aware install snippet above (`pip.main(...)` on PFC 6/7, `pip._internal.cli.main.main(...)` on PFC 9) |
 | `websockets` version mismatch in PFC 9 | In the PFC 9 IPython console, run `from pip._internal.cli.main import main as pip_main; pip_main(["install", "--user", "websockets==16.0"])` |
 | Port in use | Use `pfc_mcp_bridge.start(port=9002)` in PFC Python, then set MCP server env `PFC_MCP_BRIDGE_URL=ws://localhost:9002` |
 | Connection failed | Check bridge is running, port is available, see `.pfc-mcp-bridge/bridge.log` |
@@ -61,7 +77,7 @@ PFC Bridge Server
 
 For the full local-source workflow, see [Developer Guide: Install and Run from Source](../docs/development/source-install.md).
 
-To run the bridge from a local source checkout (without installing from PyPI), use `%run` in the PFC IPython console:
+To run the bridge from a local source checkout without installing from PyPI, use `%run` in the PFC IPython console:
 
 ```python
 %run C:/path/to/pfc-mcp/pfc-mcp-bridge/start_bridge.py

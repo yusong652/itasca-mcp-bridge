@@ -12,7 +12,7 @@ Usage (in PFC console CLI):
     pfc_mcp_bridge.start(mode="console")
 """
 
-__version__ = "0.2.1"
+__version__ = "0.2.2"
 
 
 # Keep global references to avoid Qt timer/callback garbage collection.
