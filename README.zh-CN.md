@@ -10,11 +10,7 @@
 
 ### 一步式引导
 
-把下面这个脚本作为日常启动入口：
-
-`https://raw.githubusercontent.com/yusong652/pfc-mcp/main/pfc-mcp-bridge/bootstrap_bridge.py`
-
-在 PFC 中任选一种方式执行：
+下载 [`addon.py`](../addon.py)，然后在 PFC 中任选一种方式执行：
 
 - 把文件内容复制到 IPython 控制台里运行
 - 或者先把文件下载到本地，再在 PFC GUI 里执行它

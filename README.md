@@ -10,11 +10,7 @@ Runtime bridge that runs inside a PFC process and enables execution tools for [p
 
 ### One-Step Bootstrap
 
-Use this script as the normal startup entrypoint:
-
-`https://raw.githubusercontent.com/yusong652/pfc-mcp/main/pfc-mcp-bridge/bootstrap_bridge.py`
-
-Inside PFC, either:
+Download [`addon.py`](../addon.py), then inside PFC either:
 
 - Copy the file contents into the IPython console and run them
 - Or download the file and execute it in PFC GUI
