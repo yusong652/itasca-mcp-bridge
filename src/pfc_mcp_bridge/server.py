@@ -207,7 +207,8 @@ class PFCWebSocketServer:
                 self.host,
                 self.port,
                 ping_interval=self.ping_interval,
-                ping_timeout=self.ping_timeout
+                ping_timeout=self.ping_timeout,
+                max_size=50 * 2**20,
             )
 
             # Note: Server is now running in the background
