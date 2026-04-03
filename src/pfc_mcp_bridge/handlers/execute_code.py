@@ -16,6 +16,7 @@ from typing import Any, Dict, Tuple
 from .context import ServerContext
 from .script_executor import execute_script
 from .helpers import require_field
+from ..utils.response import _truncate_output
 
 logger = logging.getLogger("PFC-Server")
 
@@ -94,7 +95,7 @@ async def handle_execute_code(ctx, data):
                 "status": result.get("status", "unknown"),
                 "message": result.get("message", ""),
                 "data": {
-                    "output": result.get("output", ""),
+                    "output": _truncate_output(result.get("output", "")),
                     "result": result.get("result"),
                 },
             }

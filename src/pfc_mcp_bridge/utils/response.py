@@ -9,6 +9,23 @@ Python 3.6 compatible implementation.
 
 from typing import Any, Dict, Optional
 
+# Bridge-side output cap.  MCP will truncate further for the LLM context
+# window, but we cap here to keep WebSocket messages well under max_size.
+MAX_OUTPUT_CHARS = 50000
+
+
+def _truncate_output(text, max_chars=MAX_OUTPUT_CHARS):
+    # type: (str, int) -> str
+    """Truncate output text, cutting at a line boundary with a friendly hint."""
+    if len(text) <= max_chars:
+        return text
+    cut = text[:max_chars].rsplit("\n", 1)[0]
+    return cut + (
+        "\n... (truncated, {} total chars. "
+        "Use pfc_check_task_status with skip_newest/limit/filter_text for full output.)"
+        .format(len(text))
+    )
+
 
 class TaskDataBuilder:
     """
@@ -76,9 +93,9 @@ class TaskDataBuilder:
 
     def with_output(self, output):
         # type: (Optional[str]) -> TaskDataBuilder
-        """Add output field (captured stdout)."""
+        """Add output field (captured stdout), truncated for safe transport."""
         if output is not None:
-            self._data["output"] = output
+            self._data["output"] = _truncate_output(output)
         return self
 
     def with_result(self, result):
