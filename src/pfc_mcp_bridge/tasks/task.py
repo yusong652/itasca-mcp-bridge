@@ -220,13 +220,11 @@ class ScriptTask:
 
         # Extract result from future (active tasks only)
         result_data = None
-        result_status = "success"
         if self.future:
             try:
                 result = self.future.result(timeout=0)
                 if isinstance(result, dict):
                     result_data = result.get("result")
-                    result_status = result.get("status", "success")
                 else:
                     result_data = result
             except Exception:
@@ -253,7 +251,7 @@ class ScriptTask:
             .with_result(serialized_result)
             .build())
 
-        return build_response(result_status, message, data)
+        return build_response("completed", message, data)
 
     def _build_interrupted_response(self, elapsed_time):
         # type: (float) -> Dict[str, Any]
@@ -295,7 +293,7 @@ class ScriptTask:
             .with_error(error_msg)
             .build())
 
-        return build_response("error", message, data)
+        return build_response("failed", message, data)
 
     def get_task_info(self):
         # type: () -> Dict[str, Any]
