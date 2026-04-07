@@ -36,10 +36,16 @@ class TaskManager:
     Task history is persisted to disk for crash recovery.
     """
 
-    def __init__(self):
-        # type: () -> None
-        """Initialize task manager, load historical tasks from disk."""
+    def __init__(self, on_task_terminal=None):
+        # type: (Any) -> None
+        """Initialize task manager, load historical tasks from disk.
+
+        Args:
+            on_task_terminal: Optional callback(task_id, status) invoked
+                when a task reaches a terminal state (completed/failed/interrupted).
+        """
         self.tasks = {}  # type: Dict[str, ScriptTask]
+        self.on_task_terminal = on_task_terminal
 
         # Ensure persistence directories exist
         for d in (DATA_DIR, LOGS_DIR):
@@ -175,6 +181,13 @@ class TaskManager:
         """Callback invoked when a task's status changes."""
         logger.debug("Task {} status changed to: {}".format(task.task_id, task.status))
         self._save_tasks()
+
+        # Notify server to broadcast terminal state to connected clients
+        if task.status in ("completed", "failed", "interrupted") and self.on_task_terminal:
+            try:
+                self.on_task_terminal(task.task_id, task.status)
+            except Exception as e:
+                logger.warning("Failed to broadcast task status: {}".format(e))
 
     def _save_tasks(self):
         # type: () -> None

@@ -3,8 +3,8 @@ Utility modules for PFC server.
 """
 
 from .path_utils import path_to_llm_format
-from .file_buffer import FileBuffer
+from .file_buffer import FileBuffer, TeeBuffer
 from .response import TaskDataBuilder, build_response
 from .command_splitter import preprocess_script
 
-__all__ = ['path_to_llm_format', 'FileBuffer', 'TaskDataBuilder', 'build_response', 'preprocess_script']
+__all__ = ['path_to_llm_format', 'FileBuffer', 'TeeBuffer', 'TaskDataBuilder', 'build_response', 'preprocess_script']

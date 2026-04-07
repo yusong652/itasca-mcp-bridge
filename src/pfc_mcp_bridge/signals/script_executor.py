@@ -90,26 +90,33 @@ def _execute_single_script(script_path, future):
     from io import StringIO
 
     try:
-        import itasca  # type: ignore
-
         # Read script content
         with open(script_path, 'r', encoding='utf-8') as f:
             script_content = f.read()
 
-        # Capture stdout into a buffer so print() output is returned to caller
+        # Capture stdout into a buffer AND echo to terminal
+        from ..utils.file_buffer import TeeBuffer
+
         old_stdout = sys.stdout
         capture_buffer = StringIO()
-        sys.stdout = capture_buffer
+        terminal = sys.__stdout__ if sys.__stdout__ is not None else old_stdout
+        sys.stdout = TeeBuffer(terminal, capture_buffer)
 
         try:
-            # Execute in isolated namespace with itasca available
-            exec_context = {"itasca": itasca}
-            exec(script_content, exec_context, exec_context)
+            # Use __main__ namespace for persistent state across executions
+            import __main__
+            exec_globals = __main__.__dict__
+            exec_globals.pop("result", None)
+
+            try:
+                code_obj = compile(script_content, script_path, "eval")
+                result = eval(code_obj, exec_globals, exec_globals)
+            except SyntaxError:
+                code_obj = compile(script_content, script_path, "exec")
+                exec(code_obj, exec_globals, exec_globals)
+                result = exec_globals.get("result", None)
         finally:
             sys.stdout = old_stdout
-
-        # Get result if script defined 'result' variable
-        result = exec_context.get("result", None)
         output = capture_buffer.getvalue()
 
         future.set_result({

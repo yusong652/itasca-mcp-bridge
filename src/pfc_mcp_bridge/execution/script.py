@@ -15,7 +15,7 @@ import traceback
 from typing import Any, Dict, Optional
 
 from .main_thread import MainThreadExecutor
-from ..utils import path_to_llm_format, FileBuffer, TaskDataBuilder, build_response, preprocess_script
+from ..utils import path_to_llm_format, FileBuffer, TeeBuffer, TaskDataBuilder, build_response, preprocess_script
 from ..signals import set_current_task, clear_current_task, clear_interrupt
 
 # Module logger
@@ -63,9 +63,10 @@ class ScriptRunner:
         if task:
             task.status = "running"
 
-        # Use shared output buffer for stdout capture
+        # Use TeeBuffer so output goes to both terminal and capture buffer
         old_stdout = sys.stdout
-        sys.stdout = output_buffer
+        terminal = sys.__stdout__ if sys.__stdout__ is not None else old_stdout
+        sys.stdout = TeeBuffer(terminal, output_buffer)
 
         # Set current task for interrupt callback
         set_current_task(task_id)
