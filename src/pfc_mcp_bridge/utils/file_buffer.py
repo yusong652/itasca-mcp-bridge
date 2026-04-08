@@ -240,7 +240,6 @@ class TeeBuffer:
         self._file_buffer.write(s)
         try:
             self._terminal.write(s)
-            self._terminal.flush()
         except (ValueError, OSError):
             pass
         return len(s)
