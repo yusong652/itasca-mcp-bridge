@@ -147,7 +147,7 @@ async def handle_interrupt_task(ctx, data):
     Returns:
         Response dict with interrupt request result
     """
-    from ..signals import request_interrupt
+    from ..signals import request_interrupt, clear_interrupt
 
     request_id = data.get("request_id", "unknown")
 
@@ -179,15 +179,7 @@ async def handle_interrupt_task(ctx, data):
 
     # Request interrupt (will be checked by PFC callback)
     success = request_interrupt(task_id)
-    if success:
-        return {
-            "type": "result",
-            "request_id": request_id,
-            "status": "success",
-            "message": "Interrupt requested for task: {}".format(task_id),
-            "data": {"task_id": task_id, "interrupt_requested": True}
-        }
-    else:
+    if not success:
         return {
             "type": "result",
             "request_id": request_id,
@@ -195,3 +187,17 @@ async def handle_interrupt_task(ctx, data):
             "message": "Failed to request interrupt",
             "data": None
         }
+
+    # Defend against TOCTOU: task may have finished between the status check
+    # above and request_interrupt. script.py's finally clears the flag on exit,
+    # but if we add it after that runs, the flag would leak. Re-check and clean.
+    if task.status not in ("pending", "running"):
+        clear_interrupt(task_id)
+
+    return {
+        "type": "result",
+        "request_id": request_id,
+        "status": "success",
+        "message": "Interrupt requested for task: {}".format(task_id),
+        "data": {"task_id": task_id, "interrupt_requested": True}
+    }

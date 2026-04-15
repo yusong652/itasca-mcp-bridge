@@ -64,7 +64,7 @@ async def handle_execute_code(ctx, data):
     total_timeout = timeout_ms / 1000.0
 
     def remaining():
-        return max(total_timeout - (time_module.time() - start_time), 0.5)
+        return total_timeout - (time_module.time() - start_time)
 
     script_path = None
     try:
