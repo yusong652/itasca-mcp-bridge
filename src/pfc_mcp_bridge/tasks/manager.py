@@ -155,6 +155,17 @@ class TaskManager:
         # type: () -> int
         """Clear all tasks from memory and disk. Returns count cleared."""
         cleared_count = len(self.tasks)
+
+        # Release any open log file handles before removing files; on Windows
+        # os.remove() fails if a file is still held open by this process.
+        for task in self.tasks.values():
+            buf = getattr(task, "output_buffer", None)
+            if buf is not None:
+                try:
+                    buf.close()
+                except Exception:
+                    pass
+
         self.tasks.clear()
 
         # Remove tasks.json

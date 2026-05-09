@@ -126,6 +126,16 @@ class ScriptTask:
             except Exception as e:
                 logger.warning("Status change callback failed: {}".format(e))
 
+        # Release the output file handle now that no more writes will happen.
+        # Subsequent status queries read from disk via self.log_path.
+        if self.output_buffer is not None:
+            try:
+                self.output_buffer.close()
+            except Exception as e:
+                logger.warning("Failed to close output buffer for task {}: {}".format(
+                    self.task_id, e
+                ))
+
     def get_elapsed_time(self):
         # type: () -> float
         """Calculate elapsed time since task start."""
