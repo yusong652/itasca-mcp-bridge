@@ -15,7 +15,15 @@ import traceback
 from typing import Any, Dict, Optional
 
 from .main_thread import MainThreadExecutor
-from ..utils import path_to_llm_format, FileBuffer, TeeBuffer, TaskDataBuilder, build_response, preprocess_script
+from ..utils import (
+    path_to_llm_format,
+    FileBuffer,
+    TeeBuffer,
+    TaskDataBuilder,
+    build_response,
+    preprocess_script,
+    capture_pfc_console,
+)
 from ..signals import set_current_task, clear_current_task, clear_interrupt
 
 # Module logger
@@ -94,18 +102,23 @@ class ScriptRunner:
             # to prevent GIL being held for the entire batch.
             script_content = preprocess_script(script_content)
 
-            # Try to execute as expression first (single line, returns value)
-            try:
-                # Use compile() with script_path for better traceback
-                code_obj = compile(script_content, script_path, "eval")
-                result = eval(code_obj, exec_globals, exec_globals)
-            except SyntaxError:
-                # If eval fails, try exec (multi-line script)
-                # Use compile() with script_path to show actual file path in traceback
-                code_obj = compile(script_content, script_path, "exec")
-                exec(code_obj, exec_globals, exec_globals)
-                # Look for 'result' variable in global namespace
-                result = exec_globals.get("result", None)
+            # Capture PFC console output (table dumps, list output) from
+            # itasca.command calls, interleaved with Python prints in
+            # execution order via the active sys.stdout (TeeBuffer).
+            cmdlog_dir = os.path.join(".pfc-mcp", "logs")
+            with capture_pfc_console(sys.stdout, cmdlog_dir):
+                # Try to execute as expression first (single line, returns value)
+                try:
+                    # Use compile() with script_path for better traceback
+                    code_obj = compile(script_content, script_path, "eval")
+                    result = eval(code_obj, exec_globals, exec_globals)
+                except SyntaxError:
+                    # If eval fails, try exec (multi-line script)
+                    # Use compile() with script_path to show actual file path in traceback
+                    code_obj = compile(script_content, script_path, "exec")
+                    exec(code_obj, exec_globals, exec_globals)
+                    # Look for 'result' variable in global namespace
+                    result = exec_globals.get("result", None)
 
             # Get captured output from shared buffer
             output_text = output_buffer.getvalue()

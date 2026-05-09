@@ -1,0 +1,256 @@
+========================================================================
+CASE: 1. ball list (2 balls present)
+------------------------------------------------------------------------
+pfc3d>ball list
+  Ball      Radius     A/All Contacts  Fixity      Position
+-------- ------------- --------------- ------- -------------------------------------------
+       1  5.000000e-01       0/      0         ( 0.000000e+00, 0.000000e+00, 0.000000e+00)
+       2  5.000000e-01       0/      0         ( 1.000000e+00, 0.000000e+00, 0.000000e+00)
+pfc3d>program log off
+**********************************************
+* Logging ended at Sun May 10 02:03:46 2026
+**********************************************
+
+========================================================================
+CASE: 2. model list information
+------------------------------------------------------------------------
+pfc3d>model list information
+Source         Content
+-------------- -----------------------------------------------------------------
+General                   Job Title : 
+General             Update Interval : 100
+General             Processing Time : 
+General            History Interval : 10
+General              Trace Interval : 10
+General            FISH Auto Create : on
+General                Large Strain : off
+General                Domain Lower : (-5.000000e+00,-5.000000e+00,-5.000000e+00)
+General                Domain Upper : ( 5.000000e+00, 5.000000e+00, 5.000000e+00)
+General               Domain X-Cond : Stop
+General               Domain Y-Cond : Stop
+General               Domain Z-Cond : Stop
+General                Total Cycles : 0
+General                Super Cycles : 0
+General                   Time Step :  0.000000e+00
+General                     Gravity : ( 0.000000e+00, 0.000000e+00, 0.000000e+00)
+General               Deterministic : on
+General            Factor Of Safety : Not Available.
+General        Process Cfd          : off
+General        Process Creep        : off
+General        Process Dynamic      : off
+General        Process Fluid        : off
+General        Process Mechanical   : on
+General        Process Thermal      : off
+General                 Record Size : 0 Lines and 0 Files
+Block               Density Scaling : on
+Block             Update Common Pln :           10
+Block              Update Sub-Cont. :          100
+Block             Update Cable Bolt :           10
+Block                   Update Beam :           10
+Block                  Damping Used : Local         0.8
+Block              Model Tolerances :
+Block                          ATOL :         0.01 (General tolerance for model.)
+Block                                 - Minimum distance between gridpoints.
+Block                                 - Tolerance to link gridpoints of joined blocks.
+Block                                 - Tolerance to select vertices close to common plane
+Block                          BTOL :        0.001
+Block                                 - Create new vertex on cut plane if existing vertex is
+Block                                   greater than BTOL from cut plane.
+Block                          CTOL :         0.05
+Block                                 - Contacts are deleted if distance from common plane
+Block                                   greater than CTOL, or added if block is within CTOL
+Block                                   of common plane.
+Block                          DTOL :         0.01
+Block                                 - Block edges cannot be smaller than DTOL.
+Block             Min. Contact Area :            0
+Block              Min. Block Angle :            1 Degrees.
+Block                 Number Blocks : 0
+Block               Number of Zones : 0
+Block             Proppant Analysis : off
+Block           Propp Settling Anal : off
+Block              Thermal Anal Time: 0
+Building-Block  Building-Block Sets : 0
+Contact              Total contacts : 0
+Contact             Active contacts : 0
+DFN             Number of fractures : 0
+DFN                  Number of DFNs : 0
+Extrude                Extrude Sets : 0
+Fragment        Number of fragments : 0
+Geometry              Geometry Sets : 0
+Structure             Beam Elements : 0
+Structure            Cable Elements : 0
+Structure            Dowel Elements : 0
+Structure          Geogrid Elements : 0
+Structure           Hybrid Elements : 0
+Structure            Liner Elements : 0
+Structure             Pile Elements : 0
+Structure            Shell Elements : 0
+Structure          Structural Nodes : 0
+Structure          Structural Links : 0
+Zone                Number of Zones : 0
+Zone           Number of Gridpoints : 0
+Zone             Number of Attaches : 0
+Zone           Number of Interfaces : 0
+Zone                       See also : ZONE LIST SUMMARY
+Zone                                  ZONE MECHANICAL LIST
+Zone                                  ZONE DYNAMIC LIST
+Zone                                  ZONE FLUID LIST
+Zone                                  ZONE CREEP LIST
+Zone                                  ZONE THERMAL LIST
+Zone                                  ZONE WATER LIST
+pfc3d>program log off
+**********************************************
+* Logging ended at Sun May 10 02:03:46 2026
+**********************************************
+
+========================================================================
+CASE: 3. ball list with show-message ON (should add header)
+------------------------------------------------------------------------
+**********************************************
+* Logging started at Sun May 10 02:03:46 2026
+* By pfc3d Version 7.00 Release 161
+* 
+* 
+* Job Title: 
+**********************************************
+pfc3d>ball list
+  Ball      Radius     A/All Contacts  Fixity      Position
+-------- ------------- --------------- ------- -------------------------------------------
+       1  5.000000e-01       0/      0         ( 0.000000e+00, 0.000000e+00, 0.000000e+00)
+       2  5.000000e-01       0/      0         ( 1.000000e+00, 0.000000e+00, 0.000000e+00)
+pfc3d>program log off
+**********************************************
+* Logging ended at Sun May 10 02:03:46 2026
+**********************************************
+
+========================================================================
+CASE: 4. truncate=True between calls (should see ONLY model list info)
+------------------------------------------------------------------------
+pfc3d>model list information
+Source         Content
+-------------- -----------------------------------------------------------------
+General                   Job Title : 
+General             Update Interval : 100
+General             Processing Time : 
+General            History Interval : 10
+General              Trace Interval : 10
+General            FISH Auto Create : on
+General                Large Strain : off
+General                Domain Lower : (-5.000000e+00,-5.000000e+00,-5.000000e+00)
+General                Domain Upper : ( 5.000000e+00, 5.000000e+00, 5.000000e+00)
+General               Domain X-Cond : Stop
+General               Domain Y-Cond : Stop
+General               Domain Z-Cond : Stop
+General                Total Cycles : 0
+General                Super Cycles : 0
+General                   Time Step :  0.000000e+00
+General                     Gravity : ( 0.000000e+00, 0.000000e+00, 0.000000e+00)
+General               Deterministic : on
+General            Factor Of Safety : Not Available.
+General        Process Cfd          : off
+General        Process Creep        : off
+General        Process Dynamic      : off
+General        Process Fluid        : off
+General        Process Mechanical   : on
+General        Process Thermal      : off
+General                 Record Size : 0 Lines and 0 Files
+Block               Density Scaling : on
+Block             Update Common Pln :           10
+Block              Update Sub-Cont. :          100
+Block             Update Cable Bolt :           10
+Block                   Update Beam :           10
+Block                  Damping Used : Local         0.8
+Block              Model Tolerances :
+Block                          ATOL :         0.01 (General tolerance for model.)
+Block                                 - Minimum distance between gridpoints.
+Block                                 - Tolerance to link gridpoints of joined blocks.
+Block                                 - Tolerance to select vertices close to common plane
+Block                          BTOL :        0.001
+Block                                 - Create new vertex on cut plane if existing vertex is
+Block                                   greater than BTOL from cut plane.
+Block                          CTOL :         0.05
+Block                                 - Contacts are deleted if distance from common plane
+Block                                   greater than CTOL, or added if block is within CTOL
+Block                                   of common plane.
+Block                          DTOL :         0.01
+Block                                 - Block edges cannot be smaller than DTOL.
+Block             Min. Contact Area :            0
+Block              Min. Block Angle :            1 Degrees.
+Block                 Number Blocks : 0
+Block               Number of Zones : 0
+Block             Proppant Analysis : off
+Block           Propp Settling Anal : off
+Block              Thermal Anal Time: 0
+Building-Block  Building-Block Sets : 0
+Contact              Total contacts : 0
+Contact             Active contacts : 0
+DFN             Number of fractures : 0
+DFN                  Number of DFNs : 0
+Extrude                Extrude Sets : 0
+Fragment        Number of fragments : 0
+Geometry              Geometry Sets : 0
+Structure             Beam Elements : 0
+Structure            Cable Elements : 0
+Structure            Dowel Elements : 0
+Structure          Geogrid Elements : 0
+Structure           Hybrid Elements : 0
+Structure            Liner Elements : 0
+Structure             Pile Elements : 0
+Structure            Shell Elements : 0
+Structure          Structural Nodes : 0
+Structure          Structural Links : 0
+Zone                Number of Zones : 0
+Zone           Number of Gridpoints : 0
+Zone             Number of Attaches : 0
+Zone           Number of Interfaces : 0
+Zone                       See also : ZONE LIST SUMMARY
+Zone                                  ZONE MECHANICAL LIST
+Zone                                  ZONE DYNAMIC LIST
+Zone                                  ZONE FLUID LIST
+Zone                                  ZONE CREEP LIST
+Zone                                  ZONE THERMAL LIST
+Zone                                  ZONE WATER LIST
+pfc3d>program log off
+**********************************************
+* Logging ended at Sun May 10 02:03:46 2026
+**********************************************
+
+========================================================================
+CASE: 5. error after a successful command (log content + exception)
+------------------------------------------------------------------------
+Python-side exception: ValueError: Bad conversion of parameter number 2 (this-keyword-does-not-exist).
+Expected tokens:
+     Keywords: accumulate-stress attribute cfd clump create delete 
+               distribute export extra fix free generate group 
+               history initialize list property results thermal 
+               tolerance trace tractions 
+    While processing line 0 of source Python interpreter.
+---LOG---
+pfc3d>ball list
+  Ball      Radius     A/All Contacts  Fixity      Position
+-------- ------------- --------------- ------- -------------------------------------------
+       1  5.000000e-01       0/      0         ( 0.000000e+00, 0.000000e+00, 0.000000e+00)
+       2  5.000000e-01       0/      0         ( 1.000000e+00, 0.000000e+00, 0.000000e+00)
+pfc3d>ball this-keyword-does-not-exist
+pfc3d>program log off
+**********************************************
+* Logging ended at Sun May 10 02:03:46 2026
+**********************************************
+
+========================================================================
+CASE: 6. overhead measurement
+------------------------------------------------------------------------
+N = 100
+  bare itasca.command loop:    1.072s (10.72 ms/call)
+  wrapped (log on for whole loop): 1.082s (10.82 ms/call)
+  overhead per call:           0.10 ms
+(Note: this is amortized — real cost is the 2 extra commands per snippet,
+ not per inner itasca.command. Per-snippet overhead is what matters.)
+
+========================================================================
+CASE: 7. log on/off pair overhead
+------------------------------------------------------------------------
+M = 50
+  bare on/off pair: 0.090s (1.79 ms/pair)
+(This is the overhead added to *every* execute_code/execute_task call.)
+

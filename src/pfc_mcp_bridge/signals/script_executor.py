@@ -108,13 +108,18 @@ def _execute_single_script(script_path, future):
             exec_globals = __main__.__dict__
             exec_globals.pop("result", None)
 
-            try:
-                code_obj = compile(script_content, script_path, "eval")
-                result = eval(code_obj, exec_globals, exec_globals)
-            except SyntaxError:
-                code_obj = compile(script_content, script_path, "exec")
-                exec(code_obj, exec_globals, exec_globals)
-                result = exec_globals.get("result", None)
+            # Capture PFC console output from itasca.command calls,
+            # interleaved with Python prints in execution order.
+            from ..utils import capture_pfc_console
+            cmdlog_dir = os.path.join(".pfc-mcp", "logs")
+            with capture_pfc_console(sys.stdout, cmdlog_dir):
+                try:
+                    code_obj = compile(script_content, script_path, "eval")
+                    result = eval(code_obj, exec_globals, exec_globals)
+                except SyntaxError:
+                    code_obj = compile(script_content, script_path, "exec")
+                    exec(code_obj, exec_globals, exec_globals)
+                    result = exec_globals.get("result", None)
         finally:
             sys.stdout = old_stdout
         output = capture_buffer.getvalue()

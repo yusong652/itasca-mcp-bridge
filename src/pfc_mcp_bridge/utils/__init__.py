@@ -6,5 +6,14 @@ from .path_utils import path_to_llm_format
 from .file_buffer import FileBuffer, TeeBuffer
 from .response import TaskDataBuilder, build_response
 from .command_splitter import preprocess_script
+from .command_log import capture_pfc_console
 
-__all__ = ['path_to_llm_format', 'FileBuffer', 'TeeBuffer', 'TaskDataBuilder', 'build_response', 'preprocess_script']
+__all__ = [
+    'path_to_llm_format',
+    'FileBuffer',
+    'TeeBuffer',
+    'TaskDataBuilder',
+    'build_response',
+    'preprocess_script',
+    'capture_pfc_console',
+]
