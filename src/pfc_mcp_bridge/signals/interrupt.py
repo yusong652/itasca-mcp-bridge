@@ -129,6 +129,68 @@ def clear_current_task():
         logger.debug("Current task cleared: %s", prev_task)
 
 
+def peek_current_task():
+    # type: () -> Optional[str]
+    """
+    Return the currently-set task/request id, or None.
+
+    Used by ``run_snippet`` to implement a save-and-restore pattern:
+    when an execute_code snippet runs *inside* a running task's
+    cycle-callback gap, we must not clobber the outer task's
+    ``_current_task_id`` on the way out — that would silently disable
+    ``pfc_interrupt_task`` for the still-running task (its PFC callback
+    checks ``_current_task_id`` and a cleared value means "no task to
+    interrupt").
+    """
+    return _current_task_id
+
+
+# =============================================================================
+# Exec Thread Registry (for execute_code L2 async-exc cancellation)
+# =============================================================================
+
+# Thread registry: request_id -> threading.get_ident() of the worker
+# currently running that request. Populated at the top of run_snippet,
+# cleaned in its finally. Read by the execute_code timeout handler to
+# target ``PyThreadState_SetAsyncExc``.
+_exec_thread_ids = {}  # type: dict
+_exec_thread_lock = threading.Lock()
+
+
+def register_exec_thread(request_id, thread_id):
+    # type: (str, int) -> None
+    """
+    Record which OS thread is currently running ``request_id``.
+
+    As a cheap leak-defence, scrubs any pre-existing entries whose
+    recorded thread is no longer alive. Leaks would only occur if
+    ``run_snippet`` exited through a path that skipped its ``finally``
+    - vanishingly rare, but the scrub keeps the registry from growing
+    unboundedly over a long-lived bridge session.
+    """
+    with _exec_thread_lock:
+        if _exec_thread_ids:
+            alive = set(t.ident for t in threading.enumerate() if t.is_alive())
+            stale = [rid for rid, tid in _exec_thread_ids.items() if tid not in alive]
+            for rid in stale:
+                _exec_thread_ids.pop(rid, None)
+        _exec_thread_ids[request_id] = thread_id
+
+
+def unregister_exec_thread(request_id):
+    # type: (str) -> None
+    """Drop the thread record for ``request_id``. Idempotent."""
+    with _exec_thread_lock:
+        _exec_thread_ids.pop(request_id, None)
+
+
+def get_exec_thread(request_id):
+    # type: (str) -> Optional[int]
+    """Return the recorded thread id for ``request_id``, or None."""
+    with _exec_thread_lock:
+        return _exec_thread_ids.get(request_id)
+
+
 # =============================================================================
 # Global Interrupt Check Function (Registered with PFC)
 # =============================================================================

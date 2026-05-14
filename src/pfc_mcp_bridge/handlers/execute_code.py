@@ -1,14 +1,14 @@
 """
 Execute code message handler.
 
-Handles synchronous code snippet execution for ``pfc_execute_code``.
-Routes through the queue/callback strategy in
-``handlers.exec_strategy.execute_snippet``.
+Thin wrapper over ``handlers.exec_strategy.execute_snippet``: shapes the
+wire response with the unified envelope (status, message, data, error).
+
+Timeouts are handled bridge-side by ``execute_snippet`` (which drives
+the two-layer termination flow). This handler only formats the result.
 """
 
 import logging
-import time as time_module
-from io import StringIO
 from typing import Any, Dict
 
 from .context import ServerContext
@@ -21,13 +21,7 @@ logger = logging.getLogger("PFC-Server")
 
 async def handle_execute_code(ctx, data):
     # type: (ServerContext, Dict[str, Any]) -> Dict[str, Any]
-    """
-    Handle ``execute_code`` message.
-
-    Runs a code snippet synchronously in the PFC main thread and returns
-    captured stdout plus any ``result`` value. Path selection (queue vs
-    callback) is handled by ``execute_snippet``.
-    """
+    """Handle ``execute_code`` message."""
     request_id = data.get("request_id", "unknown")
 
     code, err = require_field(data, "code", request_id, "execute_code_result")
@@ -35,50 +29,10 @@ async def handle_execute_code(ctx, data):
         return err
 
     timeout_ms = data.get("timeout_ms", 10000)
-    start_time = time_module.time()
-    total_timeout = timeout_ms / 1000.0
-
-    def remaining():
-        return total_timeout - (time_module.time() - start_time)
+    timeout_s = timeout_ms / 1000.0
 
     try:
-        output_buffer = StringIO()
-
-        result, path = await execute_snippet(
-            ctx=ctx,
-            code=code,
-            request_id=request_id,
-            output_buffer=output_buffer,
-            remaining_time_func=remaining,
-            attempt=0,
-            max_attempts=2,
-        )
-
-        if result is not None:
-            return {
-                "type": "execute_code_result",
-                "request_id": request_id,
-                "execution_path": path,
-                "status": result.get("status", "unknown"),
-                "message": result.get("message", ""),
-                "data": {
-                    "output": _truncate_output(result.get("output", "")),
-                    "result": result.get("result"),
-                },
-            }
-
-        return {
-            "type": "execute_code_result",
-            "request_id": request_id,
-            "status": "timeout",
-            "message": "Execution timed out after {}ms".format(timeout_ms),
-            "error": {
-                "code": "timeout",
-                "message": "Execution timed out after {}ms".format(timeout_ms),
-            },
-            "data": None,
-        }
-
+        result, path = await execute_snippet(ctx, code, request_id, timeout_s)
     except Exception as e:
         logger.error("Code execution failed: {}".format(e))
         return {
@@ -92,3 +46,30 @@ async def handle_execute_code(ctx, data):
             },
             "data": None,
         }
+
+    status = result.get("status", "unknown")
+    message = result.get("message", "")
+    response = {
+        "type": "execute_code_result",
+        "request_id": request_id,
+        "execution_path": path,
+        "status": status,
+        "message": message,
+        "data": {
+            "output": _truncate_output(result.get("output", "")),
+            "result": result.get("result"),
+        },
+    }
+
+    if status in ("error", "terminated", "timeout", "interrupted"):
+        error_code = result.get("_error_code", status)
+        error_details = result.get("_error_details")
+        error_block = {
+            "code": error_code,
+            "message": message,
+        }  # type: Dict[str, Any]
+        if error_details:
+            error_block["details"] = error_details
+        response["error"] = error_block
+
+    return response

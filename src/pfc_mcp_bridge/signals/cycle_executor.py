@@ -88,12 +88,14 @@ def _run_pending_snippet(code, request_id, future):
     Run a single pending snippet and resolve its future.
 
     Delegates execution to ``execution.snippet.run_snippet`` so the
-    callback path and the queue path share identical semantics.
+    callback path and the queue path share identical semantics, and
+    passes ``request_id`` so the timeout handler can target this
+    thread via ``PyThreadState_SetAsyncExc``.
     """
     from ..execution.snippet import run_snippet
 
     try:
-        result = run_snippet(code, StringIO())
+        result = run_snippet(code, StringIO(), request_id=request_id)
         future.set_result(result)
     except BaseException as e:
         # ``run_snippet`` catches BaseException internally; this is
