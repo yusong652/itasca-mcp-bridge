@@ -32,7 +32,7 @@ except ImportError:
 from .positions import EXECUTOR_CALLBACK_POSITION
 
 # Module logger
-logger = logging.getLogger("itasca-bridge")
+logger = logging.getLogger("itasca-mcp-bridge")
 
 
 # =============================================================================

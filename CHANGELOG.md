@@ -1,21 +1,21 @@
 # Changelog
 
-All notable changes to `itasca-bridge` are documented here.
+All notable changes to `itasca-mcp-bridge` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.1.0] - 2026-05-19
 
-Initial release of `itasca-bridge` as a standalone, product-neutral
+Initial release of `itasca-mcp-bridge` as a standalone, product-neutral
 package. Extracted from `pfc-mcp-bridge` 0.3.2 via `git subtree split`
 (commit history preserved) so that `pfc-mcp`, a future `flac-mcp`, and
 other MCP servers can share one bridge runtime.
 
 Changes relative to the `pfc-mcp-bridge` 0.3.2 baseline:
 
-- Renamed package `pfc_mcp_bridge` → `itasca_bridge`, distribution
-  `pfc-mcp-bridge` → `itasca-bridge`, console script `itasca-bridge`.
-- Unified runtime data directory to `.itasca-bridge/` (was split across
+- Renamed package `pfc_mcp_bridge` → `itasca_mcp_bridge`, distribution
+  `pfc-mcp-bridge` → `itasca-mcp-bridge`, console script `itasca-mcp-bridge`.
+- Unified runtime data directory to `.itasca-mcp-bridge/` (was split across
   `.pfc-mcp/` and `.pfc-mcp-bridge/`).
 - Product-neutral branding in startup banner, logger name, CLI help, and
   the missing-`itasca`-module error message (now names PFC / FLAC3D).
@@ -27,13 +27,13 @@ Changes relative to the `pfc-mcp-bridge` 0.3.2 baseline:
   follow-up pending PFC + FLAC3D validation.
 
 `pfc-mcp` continues to ship its own bundled bridge and is unaffected by
-this package; adopting `itasca-bridge` there is a future breaking change.
+this package; adopting `itasca-mcp-bridge` there is a future breaking change.
 
 ---
 
 The entries below are inherited `pfc-mcp-bridge` history, retained for
 provenance. Their version numbers refer to `pfc-mcp-bridge`, not
-`itasca-bridge`.
+`itasca-mcp-bridge`.
 
 ## [pfc-mcp-bridge 0.3.2] - 2026-05-14
 

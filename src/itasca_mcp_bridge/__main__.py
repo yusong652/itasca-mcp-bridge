@@ -1,17 +1,17 @@
-"""Allow running as: python -m itasca_bridge"""
+"""Allow running as: python -m itasca_mcp_bridge"""
 
 import argparse
 
-from itasca_bridge import __version__, start
+from itasca_mcp_bridge import __version__, start
 
 
 def main():
     parser = argparse.ArgumentParser(
-        prog="itasca-bridge",
-        description="Itasca Bridge - WebSocket bridge for ITASCA codes (PFC, FLAC3D, ...)",
+        prog="itasca-mcp-bridge",
+        description="Itasca MCP Bridge - WebSocket bridge for ITASCA codes (PFC, FLAC3D, ...)",
     )
     parser.add_argument(
-        "--version", "-v", action="version", version="itasca-bridge {}".format(__version__)
+        "--version", "-v", action="version", version="itasca-mcp-bridge {}".format(__version__)
     )
     parser.add_argument("--host", default="localhost", help="server host (default: localhost)")
     parser.add_argument("--port", type=int, default=9001, help="server port (default: 9001)")

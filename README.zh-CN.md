@@ -1,8 +1,8 @@
-# itasca-bridge
+# itasca-mcp-bridge
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-[![PyPI](https://img.shields.io/pypi/v/itasca-bridge)](https://pypi.org/project/itasca-bridge/)
+[![PyPI](https://img.shields.io/pypi/v/itasca-mcp-bridge)](https://pypi.org/project/itasca-mcp-bridge/)
 
 运行在 ITASCA 产品进程内（PFC、FLAC3D 等）的 bridge，把产品的 Python SDK
 以 WebSocket API 暴露出来，为 [pfc-mcp](https://pypi.org/project/pfc-mcp/)
@@ -23,10 +23,10 @@ Python 状态——使用的是 ITASCA 通用命令语言 / SDK，已验证在 P
 
 ```python
 from pip._internal.cli.main import main as pip_main
-pip_main(["install", "--user", "itasca-bridge"])
+pip_main(["install", "--user", "itasca-mcp-bridge"])
 
-import itasca_bridge
-itasca_bridge.start()
+import itasca_mcp_bridge
+itasca_mcp_bridge.start()
 ```
 
 `websockets` 会作为依赖自动安装，并按内嵌 Python 版本匹配（Python 3.6 用
@@ -37,7 +37,7 @@ Python 3.10 用 `websockets==16.0`）。
 ### 从源码运行
 
 ```python
-%run C:/path/to/itasca-bridge/start_bridge.py
+%run C:/path/to/itasca-mcp-bridge/start_bridge.py
 ```
 
 > 路径使用正斜杠，不要加引号。
@@ -50,10 +50,10 @@ Bridge 会自动检测运行环境：GUI 使用 Qt 定时器，控制台使用�
 
 ```text
 ============================================================
-Itasca Bridge Server
+Itasca MCP Bridge Server
 ============================================================
   URL:         ws://localhost:9001
-  Log:         /your-working-dir/.itasca-bridge/bridge.log
+  Log:         /your-working-dir/.itasca-mcp-bridge/bridge.log
   Callbacks:   Interrupt, Executor (registered)
 ============================================================
 ```
@@ -70,11 +70,11 @@ Itasca Bridge Server
 
 | 现象 | 处理方式 |
 |---------|-----|
-| 服务无法启动 | 在产品 IPython 控制台中重新执行安装 / 启动步骤；查看 `.itasca-bridge/bridge.log` |
+| 服务无法启动 | 在产品 IPython 控制台中重新执行安装 / 启动步骤；查看 `.itasca-mcp-bridge/bridge.log` |
 | `websockets` 版本不匹配 | 在产品 IPython 控制台中执行 `from pip._internal.cli.main import main as pip_main; pip_main(["install", "--user", "websockets==16.0"])`（Python 3.6 用 `9.1`） |
-| 端口被占用 | `itasca_bridge.start(port=9002)`，并把 MCP 客户端的 bridge 地址指向 `ws://localhost:9002` |
-| 连接失败 | 确认 bridge 正在运行且端口可达，查看 `.itasca-bridge/bridge.log` |
-| 无法执行任务 / MCP 无法连接 | 若执行工具返回 `ok=false`、`error.code=bridge_unavailable`、`error.details.reason=cannot connect to bridge service`，请确认 `itasca_bridge.start()` 正在运行，并检查 MCP 客户端的 bridge 地址是否一致 |
+| 端口被占用 | `itasca_mcp_bridge.start(port=9002)`，并把 MCP 客户端的 bridge 地址指向 `ws://localhost:9002` |
+| 连接失败 | 确认 bridge 正在运行且端口可达，查看 `.itasca-mcp-bridge/bridge.log` |
+| 无法执行任务 / MCP 无法连接 | 若执行工具返回 `ok=false`、`error.code=bridge_unavailable`、`error.details.reason=cannot connect to bridge service`，请确认 `itasca_mcp_bridge.start()` 正在运行，并检查 MCP 客户端的 bridge 地址是否一致 |
 
 ## 与 MCP 服务端的关系
 

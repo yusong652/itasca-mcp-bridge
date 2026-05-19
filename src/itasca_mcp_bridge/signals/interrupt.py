@@ -25,7 +25,7 @@ from typing import Any, Optional
 from .positions import INTERRUPT_CALLBACK_POSITION, EXECUTOR_CALLBACK_POSITION
 
 # Module logger
-logger = logging.getLogger("itasca-bridge")
+logger = logging.getLogger("itasca-mcp-bridge")
 
 
 # =============================================================================

@@ -24,7 +24,7 @@ import os
 import uuid
 from contextlib import contextmanager
 
-logger = logging.getLogger("itasca-bridge")
+logger = logging.getLogger("itasca-mcp-bridge")
 
 
 def _strip_footer(content):

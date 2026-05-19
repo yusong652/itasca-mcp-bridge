@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-Itasca Bridge source-run entrypoint.
+Itasca MCP Bridge source-run entrypoint.
 
 Run the bridge directly from a source checkout (no PyPI install),
 from the product's IPython console:
-    %run /path/to/itasca-bridge/start_bridge.py
+    %run /path/to/itasca-mcp-bridge/start_bridge.py
 
 Equivalent to:
-    import itasca_bridge
-    itasca_bridge.start()
+    import itasca_mcp_bridge
+    itasca_mcp_bridge.start()
 """
 
 import os
@@ -23,11 +23,11 @@ def _ensure_local_src_on_path():
 
 _ensure_local_src_on_path()
 
-import itasca_bridge  # type: ignore  # noqa: E402
+import itasca_mcp_bridge  # type: ignore  # noqa: E402
 
 
 def main():
-    itasca_bridge.start()
+    itasca_mcp_bridge.start()
 
 
 if __name__ == "__main__":

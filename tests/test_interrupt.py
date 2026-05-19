@@ -5,8 +5,8 @@ from __future__ import annotations
 import threading
 
 import pytest
-from itasca_bridge.signals import interrupt as interrupt_mod
-from itasca_bridge.signals.interrupt import (
+from itasca_mcp_bridge.signals import interrupt as interrupt_mod
+from itasca_mcp_bridge.signals.interrupt import (
     _pfc_interrupt_check,
     check_interrupt,
     clear_current_task,

@@ -14,7 +14,7 @@ dist/
 dist-local/
 
 # Bridge runtime data (created in the product's working directory)
-.itasca-bridge/
+.itasca-mcp-bridge/
 
 # MSYS/Cygwin crash dumps
 *.stackdump

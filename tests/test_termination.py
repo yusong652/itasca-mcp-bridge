@@ -9,7 +9,7 @@ from __future__ import annotations
 import threading
 import time
 
-from itasca_bridge.execution.termination import (
+from itasca_mcp_bridge.execution.termination import (
     BridgeTimeout,
     fire_async_exception,
     is_safe_to_async_raise,

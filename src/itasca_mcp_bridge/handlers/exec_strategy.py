@@ -41,7 +41,7 @@ from ..execution.termination import (
 )
 from ..signals import get_exec_thread, request_interrupt
 
-logger = logging.getLogger("itasca-bridge")
+logger = logging.getLogger("itasca-mcp-bridge")
 
 # How long to wait for the pump thread to unwind after we inject
 # ``BridgeTimeout``. A pure-Python loop aborts within a handful of

@@ -1,8 +1,8 @@
-# itasca-bridge
+# itasca-mcp-bridge
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-[![PyPI](https://img.shields.io/pypi/v/itasca-bridge)](https://pypi.org/project/itasca-bridge/)
+[![PyPI](https://img.shields.io/pypi/v/itasca-mcp-bridge)](https://pypi.org/project/itasca-mcp-bridge/)
 
 Runtime bridge that runs inside an ITASCA product process (PFC, FLAC3D, ...)
 and exposes the product's Python SDK as a WebSocket API, enabling execution
@@ -24,10 +24,10 @@ In the product's IPython console:
 
 ```python
 from pip._internal.cli.main import main as pip_main
-pip_main(["install", "--user", "itasca-bridge"])
+pip_main(["install", "--user", "itasca-mcp-bridge"])
 
-import itasca_bridge
-itasca_bridge.start()
+import itasca_mcp_bridge
+itasca_mcp_bridge.start()
 ```
 
 `websockets` is pulled in automatically with a version matched to the
@@ -38,7 +38,7 @@ missing or mismatched, install it the same way (`pip_main(["install",
 ### Run from a source checkout
 
 ```python
-%run C:/path/to/itasca-bridge/start_bridge.py
+%run C:/path/to/itasca-mcp-bridge/start_bridge.py
 ```
 
 > Use forward slashes in the path. Do not wrap it in quotes.
@@ -53,10 +53,10 @@ Expected output:
 
 ```text
 ============================================================
-Itasca Bridge Server
+Itasca MCP Bridge Server
 ============================================================
   URL:         ws://localhost:9001
-  Log:         /your-working-dir/.itasca-bridge/bridge.log
+  Log:         /your-working-dir/.itasca-mcp-bridge/bridge.log
   Callbacks:   Interrupt, Executor (registered)
 ============================================================
 ```
@@ -75,11 +75,11 @@ Itasca Bridge Server
 
 | Symptom | Fix |
 |---------|-----|
-| Server won't start | Re-run the install/start steps in the product's IPython console; check `.itasca-bridge/bridge.log` |
+| Server won't start | Re-run the install/start steps in the product's IPython console; check `.itasca-mcp-bridge/bridge.log` |
 | `websockets` version mismatch | In the product IPython console: `from pip._internal.cli.main import main as pip_main; pip_main(["install", "--user", "websockets==16.0"])` (use `9.1` on Python 3.6) |
-| Port in use | `itasca_bridge.start(port=9002)`, then point your MCP client's bridge URL at `ws://localhost:9002` |
-| Connection failed | Confirm the bridge is running and the port is reachable; see `.itasca-bridge/bridge.log` |
-| No task execution / MCP cannot connect | If execution tools return `ok=false`, `error.code=bridge_unavailable`, `error.details.reason=cannot connect to bridge service`, confirm `itasca_bridge.start()` is running and your MCP client's bridge URL matches |
+| Port in use | `itasca_mcp_bridge.start(port=9002)`, then point your MCP client's bridge URL at `ws://localhost:9002` |
+| Connection failed | Confirm the bridge is running and the port is reachable; see `.itasca-mcp-bridge/bridge.log` |
+| No task execution / MCP cannot connect | If execution tools return `ok=false`, `error.code=bridge_unavailable`, `error.details.reason=cannot connect to bridge service`, confirm `itasca_mcp_bridge.start()` is running and your MCP client's bridge URL matches |
 
 ## Relationship to MCP servers
 

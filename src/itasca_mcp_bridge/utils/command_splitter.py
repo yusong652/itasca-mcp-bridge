@@ -17,7 +17,7 @@ import re
 from typing import List, Optional, Tuple
 
 # Module logger
-logger = logging.getLogger("itasca-bridge")
+logger = logging.getLogger("itasca-mcp-bridge")
 
 
 def split_pfc_commands(multiline_str):

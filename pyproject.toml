@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "itasca-bridge"
+name = "itasca-mcp-bridge"
 dynamic = ["version"]
 description = "WebSocket bridge for ITASCA codes (PFC, FLAC3D, ...) - runs inside the product GUI to enable remote simulation control"
 requires-python = ">=3.6"
@@ -27,10 +27,10 @@ dependencies = [
 readme = "README.md"
 
 [project.scripts]
-itasca-bridge = "itasca_bridge.__main__:main"
+itasca-mcp-bridge = "itasca_mcp_bridge.__main__:main"
 
 [tool.hatch.version]
-path = "src/itasca_bridge/__init__.py"
+path = "src/itasca_mcp_bridge/__init__.py"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/itasca_bridge"]
+packages = ["src/itasca_mcp_bridge"]

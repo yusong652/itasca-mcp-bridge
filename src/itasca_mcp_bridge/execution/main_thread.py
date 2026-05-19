@@ -14,7 +14,7 @@ from concurrent.futures import Future
 from typing import Callable, Any, Optional
 
 # Module logger
-logger = logging.getLogger("itasca-bridge")
+logger = logging.getLogger("itasca-mcp-bridge")
 
 
 class MainThreadExecutor:

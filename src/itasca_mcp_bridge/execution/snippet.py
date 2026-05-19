@@ -46,7 +46,7 @@ from ..signals import (
 )
 from .termination import BridgeTimeout
 
-logger = logging.getLogger("itasca-bridge")
+logger = logging.getLogger("itasca-mcp-bridge")
 
 # Synthetic filename used for compile()/traceback so error frames render
 # as ``<execute_code>`` instead of an internal temp path.
@@ -101,7 +101,7 @@ def run_snippet(code, output_buffer, request_id=None):
         # Don't let a prior snippet's `result` leak into this one.
         exec_globals.pop("result", None)
 
-        cmdlog_dir = os.path.join(".itasca-bridge", "logs")
+        cmdlog_dir = os.path.join(".itasca-mcp-bridge", "logs")
         with capture_pfc_console(sys.stdout, cmdlog_dir):
             try:
                 code_obj = compile(code, SNIPPET_LABEL, "eval")

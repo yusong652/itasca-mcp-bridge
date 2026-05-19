@@ -1,16 +1,16 @@
-"""Itasca Bridge - WebSocket bridge for ITASCA codes.
+"""Itasca MCP Bridge - WebSocket bridge for ITASCA codes.
 
 Runs inside an ITASCA product GUI (PFC, FLAC3D, ...) Python environment
 and exposes the product SDK as a remote WebSocket API for MCP clients
 and other tools.
 
 Usage (in the product GUI Python console):
-    import itasca_bridge
-    itasca_bridge.start()
+    import itasca_mcp_bridge
+    itasca_mcp_bridge.start()
 
 Usage (in the product console CLI):
-    import itasca_bridge
-    itasca_bridge.start(mode="console")
+    import itasca_mcp_bridge
+    itasca_mcp_bridge.start(mode="console")
 """
 
 __version__ = "0.1.0"
@@ -104,7 +104,7 @@ def start(
     max_tasks_per_tick=DEFAULT_MAX_TASKS_PER_TICK,
     mode="auto",
 ):
-    """Start the Itasca Bridge server.
+    """Start the Itasca MCP Bridge server.
 
     Starts a WebSocket server in a background thread, then starts the main-thread
     task pump.
@@ -140,7 +140,7 @@ def start(
     interval_ms = _to_positive_int(timer_interval_ms, DEFAULT_TIMER_INTERVAL_MS)
 
     # ── Logging ───────────────────────────────────────────────
-    bridge_dir = os.path.join(os.getcwd(), ".itasca-bridge")
+    bridge_dir = os.path.join(os.getcwd(), ".itasca-mcp-bridge")
     if not os.path.exists(bridge_dir):
         os.makedirs(bridge_dir)
     log_file = os.path.join(bridge_dir, "bridge.log")
@@ -154,7 +154,7 @@ def start(
                     logging.FileHandler(log_file, mode='w', encoding='utf-8')]:
         handler.setFormatter(formatter)
         root_logger.addHandler(handler)
-    logger = logging.getLogger("itasca-bridge")
+    logger = logging.getLogger("itasca-mcp-bridge")
 
     # ── Server components ─────────────────────────────────────
     from .execution import MainThreadExecutor
@@ -197,7 +197,7 @@ def start(
         raise RuntimeError(
             "Port {} is already in use. "
             "Another bridge may be running, or another process is using this port.\n"
-            "Try: itasca_bridge.start(port={})".format(port, port + 1)
+            "Try: itasca_mcp_bridge.start(port={})".format(port, port + 1)
         )
     finally:
         sock.close()
@@ -231,7 +231,7 @@ def start(
 
     # ── Status display ────────────────────────────────────────
     print("\n" + "=" * 60)
-    print("Itasca Bridge Server")
+    print("Itasca MCP Bridge Server")
     print("=" * 60)
     print("  URL:         ws://{}:{}".format(host, port))
     print("  Log:         {}".format(log_file))

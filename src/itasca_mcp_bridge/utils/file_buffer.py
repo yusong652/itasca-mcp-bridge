@@ -15,7 +15,7 @@ import logging
 from typing import Optional
 
 # Module logger
-logger = logging.getLogger("itasca-bridge")
+logger = logging.getLogger("itasca-mcp-bridge")
 
 # Default tail size for real-time monitoring (100KB)
 DEFAULT_TAIL_SIZE = 100_000
