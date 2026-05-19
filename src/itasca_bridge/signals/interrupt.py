@@ -22,8 +22,10 @@ import threading
 import logging
 from typing import Any, Optional
 
+from .positions import INTERRUPT_CALLBACK_POSITION, EXECUTOR_CALLBACK_POSITION
+
 # Module logger
-logger = logging.getLogger("PFC-Server")
+logger = logging.getLogger("itasca-bridge")
 
 
 # =============================================================================
@@ -220,7 +222,7 @@ def _pfc_interrupt_check():
 # PFC Callback Registration
 # =============================================================================
 
-def _re_register_callback(itasca_module, position=50.0):
+def _re_register_callback(itasca_module, position=INTERRUPT_CALLBACK_POSITION):
     # type: (Any, float) -> None
     """
     Re-register interrupt callback with PFC.
@@ -238,7 +240,7 @@ def _re_register_callback(itasca_module, position=50.0):
         from .cycle_executor import _pfc_executor_callback, is_executor_callback_registered
         if is_executor_callback_registered():
             __main__._pfc_executor_callback = _pfc_executor_callback  # type: ignore[attr-defined]
-            itasca_module.set_callback("_pfc_executor_callback", 51.0)
+            itasca_module.set_callback("_pfc_executor_callback", EXECUTOR_CALLBACK_POSITION)
             logger.debug("Executor callback re-registered after model reset")
     except ImportError:
         pass  # cycle_executor not available
@@ -248,7 +250,7 @@ def _re_register_callback(itasca_module, position=50.0):
 _MODEL_RESET_COMMANDS = ("model new", "model restore")
 
 
-def register_interrupt_callback(itasca_module, position=50.0):
+def register_interrupt_callback(itasca_module, position=INTERRUPT_CALLBACK_POSITION):
     # type: (Any, float) -> bool
     """
     Register interrupt callback with PFC.
@@ -260,7 +262,8 @@ def register_interrupt_callback(itasca_module, position=50.0):
 
     Args:
         itasca_module: The itasca module (imported in PFC environment)
-        position: Cycle execution position (50.0 = after cycle completion)
+        position: Cycle point for set_callback
+            (default: INTERRUPT_CALLBACK_POSITION; see signals.positions).
             - Negative values: before cycle starts
             - 0.0: timestep calculation
             - 10.0: kinematics

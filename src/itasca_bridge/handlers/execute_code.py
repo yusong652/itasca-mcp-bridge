@@ -16,7 +16,7 @@ from .exec_strategy import execute_snippet
 from .helpers import require_field
 from ..utils.response import _truncate_output
 
-logger = logging.getLogger("PFC-Server")
+logger = logging.getLogger("itasca-bridge")
 
 
 async def handle_execute_code(ctx, data):

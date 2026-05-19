@@ -29,8 +29,10 @@ try:
 except ImportError:
     from Queue import Queue, Empty  # type: ignore
 
+from .positions import EXECUTOR_CALLBACK_POSITION
+
 # Module logger
-logger = logging.getLogger("PFC-Server")
+logger = logging.getLogger("itasca-bridge")
 
 
 # =============================================================================
@@ -146,7 +148,7 @@ def _pfc_executor_callback():
 _callback_registered = False
 
 
-def register_executor_callback(itasca_module, position=51.0):
+def register_executor_callback(itasca_module, position=EXECUTOR_CALLBACK_POSITION):
     # type: (Any, float) -> bool
     """
     Register the snippet-batching callback with PFC.
@@ -157,9 +159,10 @@ def register_executor_callback(itasca_module, position=51.0):
 
     Args:
         itasca_module: The itasca module (imported in PFC environment).
-        position: Cycle execution position (default: 51.0)
-            - 50.0: interrupt check callback
-            - 51.0: snippet execution (after interrupt)
+        position: Cycle point for set_callback
+            (default: EXECUTOR_CALLBACK_POSITION; see signals.positions).
+            Must stay > INTERRUPT_CALLBACK_POSITION so the interrupt
+            check runs before snippet execution within each cycle.
 
     Returns:
         bool: True if registered successfully, False if already registered.

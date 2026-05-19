@@ -6,7 +6,7 @@ import logging
 import os
 from typing import Any, Dict
 
-logger = logging.getLogger("PFC-Server")
+logger = logging.getLogger("itasca-bridge")
 
 
 async def handle_get_working_directory(ctx, data):

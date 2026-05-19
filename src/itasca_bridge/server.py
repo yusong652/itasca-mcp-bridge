@@ -27,7 +27,7 @@ from .handlers import (
 )
 
 # Module logger
-logger = logging.getLogger("PFC-Server")
+logger = logging.getLogger("itasca-bridge")
 
 
 class PFCWebSocketServer:

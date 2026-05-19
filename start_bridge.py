@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-PFC Bridge Startup Script (legacy compatibility wrapper).
+Itasca Bridge source-run entrypoint.
 
-Prefer:
-    import pfc_mcp_bridge
-    pfc_mcp_bridge.start()
+Run the bridge directly from a source checkout (no PyPI install),
+from the product's IPython console:
+    %run /path/to/itasca-bridge/start_bridge.py
 
-This script is kept for backward compatibility with:
-    %run /path/to/pfc-mcp/pfc-mcp-bridge/start_bridge.py
+Equivalent to:
+    import itasca_bridge
+    itasca_bridge.start()
 """
 
 import os
@@ -22,11 +23,11 @@ def _ensure_local_src_on_path():
 
 _ensure_local_src_on_path()
 
-import pfc_mcp_bridge  # type: ignore  # noqa: E402
+import itasca_bridge  # type: ignore  # noqa: E402
 
 
 def main():
-    pfc_mcp_bridge.start()
+    itasca_bridge.start()
 
 
 if __name__ == "__main__":

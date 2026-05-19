@@ -5,8 +5,8 @@ Provides the TaskManager class that acts as a registry for all tracked tasks,
 with disk persistence in a flat layout.
 
 Persistence layout:
-    .pfc-mcp/tasks.json
-    .pfc-mcp/logs/task_{id}.log
+    .itasca-bridge/tasks.json
+    .itasca-bridge/logs/task_{id}.log
 
 Python 3.6 compatible implementation.
 """
@@ -20,10 +20,10 @@ from typing import Any, Dict, List, Optional
 from .task import ScriptTask
 
 # Module logger
-logger = logging.getLogger("PFC-Server")
+logger = logging.getLogger("itasca-bridge")
 
 # Persistence constants
-DATA_DIR = ".pfc-mcp"
+DATA_DIR = ".itasca-bridge"
 LOGS_DIR = os.path.join(DATA_DIR, "logs")
 TASKS_FILENAME = os.path.join(DATA_DIR, "tasks.json")
 
@@ -268,7 +268,7 @@ class TaskManager:
     @staticmethod
     def _save_file(tasks_data):
         # type: (List[Dict[str, Any]]) -> None
-        """Atomically save tasks to .pfc-mcp/tasks.json."""
+        """Atomically save tasks to .itasca-bridge/tasks.json."""
         temp = TASKS_FILENAME + ".tmp"
         try:
             with open(temp, 'w') as f:
@@ -280,7 +280,7 @@ class TaskManager:
     @staticmethod
     def _load_file():
         # type: () -> List[Dict[str, Any]]
-        """Load tasks from .pfc-mcp/tasks.json."""
+        """Load tasks from .itasca-bridge/tasks.json."""
         if not os.path.exists(TASKS_FILENAME):
             return []
         try:

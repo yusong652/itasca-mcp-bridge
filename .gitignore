@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+
+# Build artifacts
+build/
+dist/
+dist-local/
+
+# Bridge runtime data (created in the product's working directory)
+.itasca-bridge/
+
+# MSYS/Cygwin crash dumps
+*.stackdump

@@ -1,18 +1,19 @@
-"""PFC MCP Bridge - WebSocket bridge for ITASCA PFC.
+"""Itasca Bridge - WebSocket bridge for ITASCA codes.
 
-Runs inside PFC GUI's Python environment and exposes the PFC SDK
-as a remote WebSocket API for MCP clients and other tools.
+Runs inside an ITASCA product GUI (PFC, FLAC3D, ...) Python environment
+and exposes the product SDK as a remote WebSocket API for MCP clients
+and other tools.
 
-Usage (in PFC GUI Python console):
-    import pfc_mcp_bridge
-    pfc_mcp_bridge.start()
+Usage (in the product GUI Python console):
+    import itasca_bridge
+    itasca_bridge.start()
 
-Usage (in PFC console CLI):
-    import pfc_mcp_bridge
-    pfc_mcp_bridge.start(mode="console")
+Usage (in the product console CLI):
+    import itasca_bridge
+    itasca_bridge.start(mode="console")
 """
 
-__version__ = "0.3.2"
+__version__ = "0.1.0"
 
 
 # Keep global references to avoid Qt timer/callback garbage collection.
@@ -103,7 +104,7 @@ def start(
     max_tasks_per_tick=DEFAULT_MAX_TASKS_PER_TICK,
     mode="auto",
 ):
-    """Start the PFC Bridge server.
+    """Start the Itasca Bridge server.
 
     Starts a WebSocket server in a background thread, then starts the main-thread
     task pump.
@@ -139,7 +140,7 @@ def start(
     interval_ms = _to_positive_int(timer_interval_ms, DEFAULT_TIMER_INTERVAL_MS)
 
     # ── Logging ───────────────────────────────────────────────
-    bridge_dir = os.path.join(os.getcwd(), ".pfc-mcp-bridge")
+    bridge_dir = os.path.join(os.getcwd(), ".itasca-bridge")
     if not os.path.exists(bridge_dir):
         os.makedirs(bridge_dir)
     log_file = os.path.join(bridge_dir, "bridge.log")
@@ -153,7 +154,7 @@ def start(
                     logging.FileHandler(log_file, mode='w', encoding='utf-8')]:
         handler.setFormatter(formatter)
         root_logger.addHandler(handler)
-    logger = logging.getLogger("PFC-Server")
+    logger = logging.getLogger("itasca-bridge")
 
     # ── Server components ─────────────────────────────────────
     from .execution import MainThreadExecutor
@@ -161,11 +162,14 @@ def start(
 
     main_executor = MainThreadExecutor()
 
-    # ── PFC configuration (required) ──────────────────────────
+    # ── ITASCA configuration (required) ───────────────────────
     try:
         import itasca as it  # type: ignore
     except ImportError as e:
-        raise RuntimeError("itasca module not available; run bridge inside PFC GUI") from e
+        raise RuntimeError(
+            "itasca module not available; run bridge inside an ITASCA product "
+            "GUI (PFC, FLAC3D, ...)"
+        ) from e
 
     it.command("python-reset-state false")
 
@@ -175,8 +179,8 @@ def start(
         is_executor_callback_registered,
     )
 
-    interrupt_ok = register_interrupt_callback(it, position=50.0)
-    executor_ok = register_executor_callback(it, position=51.0)
+    interrupt_ok = register_interrupt_callback(it)
+    executor_ok = register_executor_callback(it)
     executor_registered = bool(executor_ok or is_executor_callback_registered())
 
     if not interrupt_ok:
@@ -193,7 +197,7 @@ def start(
         raise RuntimeError(
             "Port {} is already in use. "
             "Another bridge may be running, or another process is using this port.\n"
-            "Try: pfc_mcp_bridge.start(port={})".format(port, port + 1)
+            "Try: itasca_bridge.start(port={})".format(port, port + 1)
         )
     finally:
         sock.close()
@@ -227,7 +231,7 @@ def start(
 
     # ── Status display ────────────────────────────────────────
     print("\n" + "=" * 60)
-    print("PFC Bridge Server")
+    print("Itasca Bridge Server")
     print("=" * 60)
     print("  URL:         ws://{}:{}".format(host, port))
     print("  Log:         {}".format(log_file))

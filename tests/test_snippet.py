@@ -10,9 +10,9 @@ from __future__ import annotations
 from io import StringIO
 
 import pytest
-from pfc_mcp_bridge.execution.snippet import run_snippet
-from pfc_mcp_bridge.execution.termination import BridgeTimeout
-from pfc_mcp_bridge.signals.interrupt import (
+from itasca_bridge.execution.snippet import run_snippet
+from itasca_bridge.execution.termination import BridgeTimeout
+from itasca_bridge.signals.interrupt import (
     check_interrupt,
     get_exec_thread,
     peek_current_task,

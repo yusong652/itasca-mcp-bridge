@@ -27,7 +27,7 @@ from ..utils import (
 from ..signals import set_current_task, clear_current_task, clear_interrupt
 
 # Module logger
-logger = logging.getLogger("PFC-Server")
+logger = logging.getLogger("itasca-bridge")
 
 
 class ScriptRunner:
@@ -105,7 +105,7 @@ class ScriptRunner:
             # Capture PFC console output (table dumps, list output) from
             # itasca.command calls, interleaved with Python prints in
             # execution order via the active sys.stdout (TeeBuffer).
-            cmdlog_dir = os.path.join(".pfc-mcp", "logs")
+            cmdlog_dir = os.path.join(".itasca-bridge", "logs")
             with capture_pfc_console(sys.stdout, cmdlog_dir):
                 # Try to execute as expression first (single line, returns value)
                 try:
@@ -269,8 +269,8 @@ class ScriptRunner:
 
         try:
             # Create output log file for complete output preservation
-            # Path: .pfc-mcp/logs/task_{task_id}.log
-            log_dir = os.path.join(".pfc-mcp", "logs")
+            # Path: .itasca-bridge/logs/task_{task_id}.log
+            log_dir = os.path.join(".itasca-bridge", "logs")
             log_path = os.path.join(log_dir, "task_{}.log".format(task_id))
             output_buffer = FileBuffer(log_path)
 

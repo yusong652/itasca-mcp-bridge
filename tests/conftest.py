@@ -1,8 +1,8 @@
-"""Test configuration for pfc-mcp-bridge.
+"""Test configuration for itasca-bridge.
 
 The bridge package isn't installed in this repo's virtualenv (it's
 deployed inside PFC GUI's embedded Python), so we put `src/` on sys.path
-to make `import pfc_mcp_bridge.*` work from these tests.
+to make `import itasca_bridge.*` work from these tests.
 
 Tests that exercise code paths reaching `import itasca` (run_snippet via
 capture_pfc_console) request the `itasca_stub` fixture, which installs a
@@ -50,7 +50,7 @@ def reset_interrupt_state():
     """
     yield
     try:
-        from pfc_mcp_bridge.signals import interrupt as _interrupt
+        from itasca_bridge.signals import interrupt as _interrupt
     except ImportError:
         return
     _interrupt._interrupt_flags.clear()

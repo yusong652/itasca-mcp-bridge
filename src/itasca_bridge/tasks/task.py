@@ -18,7 +18,7 @@ from typing import Any, Dict, Optional
 from ..utils import TaskDataBuilder, build_response
 
 # Module logger
-logger = logging.getLogger("PFC-Server")
+logger = logging.getLogger("itasca-bridge")
 
 # Default pagination window when caller does not specify one.
 DEFAULT_PAGINATION_LIMIT = 64

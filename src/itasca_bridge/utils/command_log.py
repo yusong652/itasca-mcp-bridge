@@ -24,7 +24,7 @@ import os
 import uuid
 from contextlib import contextmanager
 
-logger = logging.getLogger("PFC-Server")
+logger = logging.getLogger("itasca-bridge")
 
 
 def _strip_footer(content):
