@@ -1,0 +1,50 @@
+name: Publish itasca-mcp-bridge
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8.1.0
+      - name: Install pytest
+        run: uv pip install --system pytest
+      - run: pytest tests/
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Extract release notes from CHANGELOG
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          awk -v ver="$VERSION" '
+            BEGIN { marker = "## [" ver "]" }
+            index($0, marker) == 1 { found=1; next }
+            found && index($0, "## [") == 1 { exit }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "::error::No CHANGELOG entry found for version $VERSION in CHANGELOG.md"
+            exit 1
+          fi
+          echo "--- release notes ---"
+          cat release-notes.md
+
+      - uses: astral-sh/setup-uv@v8.1.0
+      - run: uv build
+      - uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: softprops/action-gh-release@v3
+        with:
+          body_path: release-notes.md
+          files: dist/*
