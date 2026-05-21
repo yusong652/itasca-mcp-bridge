@@ -4,6 +4,26 @@ All notable changes to `itasca-mcp-bridge` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-05-22
+
+### Fixed
+- `command_splitter` now recognizes `import itasca as <alias>` and
+  `from itasca import command [as <alias>]`. Previously the multi-line
+  splitter only matched the literal `itasca.command(...)` form, so the
+  canonical PFC convention `import itasca as it` skipped splitting
+  entirely — the block ran as one C batch, holding the GIL while PFC
+  echoed every sub-command into IPython's ZMQIOStream. Its `flush`
+  timed out trying to reach a Qt event loop the same GIL was blocking,
+  deadlocking the bridge until requests began timing out as
+  `bridge_unavailable` on the MCP side.
+
+### Added
+- DEBUG diagnostic for multi-line `<name>.command(...)` calls whose
+  receiver isn't a known itasca alias (e.g. reassignment patterns like
+  `_it = itasca`). Silent at default INFO level; gives a grep target
+  in `bridge.log` when the same stall recurs through a path the
+  splitter can't statically prove.
+
 ## [0.1.0] - 2026-05-19
 
 Initial release of `itasca-mcp-bridge` as a standalone, product-neutral
