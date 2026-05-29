@@ -66,6 +66,14 @@ def capture_pfc_console(stdout_sink, log_dir):
     """
     import itasca
 
+    # Resolve to an absolute path: the PFC command interpreter resolves
+    # relative file paths against its OWN working directory, which is not
+    # guaranteed to equal Python's os.getcwd() (e.g. headless Linux console
+    # leaves Python at the launch dir but PFC at /tmp). A relative log_path
+    # would then be written by PFC and read back by Python at two different
+    # locations, yielding empty captures or a hard write error.
+    log_dir = os.path.abspath(log_dir) if log_dir else log_dir
+
     if log_dir and not os.path.exists(log_dir):
         try:
             os.makedirs(log_dir)
