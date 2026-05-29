@@ -4,6 +4,22 @@ All notable changes to `itasca-mcp-bridge` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-05-29
+
+### Fixed
+- `capture_pfc_console` now resolves the command-log path with
+  `os.path.abspath()`. The Itasca command interpreter resolves relative
+  `program log-file` paths against its *own* working directory, which is
+  not guaranteed to equal Python's `os.getcwd()` — on the headless Linux
+  console the engine sits at `/tmp` while Python runs from the launch
+  directory. The log was then written and read at two different locations,
+  so `itasca.command()` output came back empty; when the engine's target
+  directory didn't exist the call failed outright with `ValueError: Error
+  write to file ...`. Resolving to an absolute path aligns both sides
+  regardless of their independent CWDs. No-op where the two already
+  coincide (e.g. the Windows GUI, where loading a project aligns them).
+  Affects both PFC and FLAC, which share this bridge.
+
 ## [0.1.1] - 2026-05-22
 
 ### Fixed
