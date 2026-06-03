@@ -35,7 +35,7 @@ import threading
 import traceback
 from typing import Any, Dict, Optional
 
-from ..utils import TeeBuffer, capture_pfc_console
+from ..utils import TeeBuffer, capture_pfc_console, path_utils
 from ..signals import (
     set_current_task,
     clear_current_task,
@@ -101,7 +101,7 @@ def run_snippet(code, output_buffer, request_id=None):
         # Don't let a prior snippet's `result` leak into this one.
         exec_globals.pop("result", None)
 
-        cmdlog_dir = os.path.join(".itasca-mcp-bridge", "logs")
+        cmdlog_dir = path_utils.logs_dir()
         with capture_pfc_console(sys.stdout, cmdlog_dir):
             try:
                 code_obj = compile(code, SNIPPET_LABEL, "eval")

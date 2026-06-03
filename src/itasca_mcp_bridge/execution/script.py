@@ -17,6 +17,7 @@ from typing import Any, Dict, Optional
 from .main_thread import MainThreadExecutor
 from ..utils import (
     path_to_llm_format,
+    path_utils,
     FileBuffer,
     TeeBuffer,
     TaskDataBuilder,
@@ -105,7 +106,7 @@ class ScriptRunner:
             # Capture PFC console output (table dumps, list output) from
             # itasca.command calls, interleaved with Python prints in
             # execution order via the active sys.stdout (TeeBuffer).
-            cmdlog_dir = os.path.join(".itasca-mcp-bridge", "logs")
+            cmdlog_dir = path_utils.logs_dir()
             with capture_pfc_console(sys.stdout, cmdlog_dir):
                 # Try to execute as expression first (single line, returns value)
                 try:
@@ -268,10 +269,11 @@ class ScriptRunner:
             return {"status": "error", "message": "Failed to read script file: {}".format(str(e)), "data": None}
 
         try:
-            # Create output log file for complete output preservation
-            # Path: .itasca-mcp-bridge/logs/task_{task_id}.log
-            log_dir = os.path.join(".itasca-mcp-bridge", "logs")
-            log_path = os.path.join(log_dir, "task_{}.log".format(task_id))
+            # Create output log file for complete output preservation.
+            # Path: <bridge_root>/.itasca-mcp-bridge/logs/task_{task_id}.log
+            # Absolute (anchored to the frozen bridge root) so a task that
+            # calls os.chdir() cannot move where check_task_status later reads.
+            log_path = path_utils.task_log_path(task_id)
             output_buffer = FileBuffer(log_path)
 
             # Submit to main thread queue

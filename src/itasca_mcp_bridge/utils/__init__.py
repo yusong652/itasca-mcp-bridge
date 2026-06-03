@@ -2,6 +2,7 @@
 Utility modules for PFC server.
 """
 
+from . import path_utils
 from .path_utils import path_to_llm_format
 from .file_buffer import FileBuffer, TeeBuffer
 from .response import TaskDataBuilder, build_response
@@ -9,6 +10,7 @@ from .command_splitter import preprocess_script
 from .command_log import capture_pfc_console
 
 __all__ = [
+    'path_utils',
     'path_to_llm_format',
     'FileBuffer',
     'TeeBuffer',

@@ -18,14 +18,10 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from .task import ScriptTask
+from ..utils import path_utils
 
 # Module logger
 logger = logging.getLogger("itasca-mcp-bridge")
-
-# Persistence constants
-DATA_DIR = ".itasca-mcp-bridge"
-LOGS_DIR = os.path.join(DATA_DIR, "logs")
-TASKS_FILENAME = os.path.join(DATA_DIR, "tasks.json")
 
 
 class TaskManager:
@@ -47,8 +43,9 @@ class TaskManager:
         self.tasks = {}  # type: Dict[str, ScriptTask]
         self.on_task_terminal = on_task_terminal
 
-        # Ensure persistence directories exist
-        for d in (DATA_DIR, LOGS_DIR):
+        # Ensure persistence directories exist (anchored to the frozen bridge
+        # root so a later task os.chdir() cannot redirect them).
+        for d in (path_utils.data_dir(), path_utils.logs_dir()):
             if not os.path.exists(d):
                 os.makedirs(d)
 
@@ -169,16 +166,18 @@ class TaskManager:
         self.tasks.clear()
 
         # Remove tasks.json
-        if os.path.exists(TASKS_FILENAME):
+        tasks_filename = path_utils.tasks_file()
+        if os.path.exists(tasks_filename):
             try:
-                os.remove(TASKS_FILENAME)
+                os.remove(tasks_filename)
             except Exception as e:
                 logger.error("Failed to remove tasks file: {}".format(e))
 
         # Remove all log files
-        if os.path.exists(LOGS_DIR):
-            for name in os.listdir(LOGS_DIR):
-                path = os.path.join(LOGS_DIR, name)
+        logs_dir = path_utils.logs_dir()
+        if os.path.exists(logs_dir):
+            for name in os.listdir(logs_dir):
+                path = os.path.join(logs_dir, name)
                 try:
                     os.remove(path)
                 except Exception:
@@ -269,11 +268,12 @@ class TaskManager:
     def _save_file(tasks_data):
         # type: (List[Dict[str, Any]]) -> None
         """Atomically save tasks to .itasca-mcp-bridge/tasks.json."""
-        temp = TASKS_FILENAME + ".tmp"
+        tasks_filename = path_utils.tasks_file()
+        temp = tasks_filename + ".tmp"
         try:
             with open(temp, 'w') as f:
                 json.dump(tasks_data, f, indent=2)
-            os.replace(temp, TASKS_FILENAME)
+            os.replace(temp, tasks_filename)
         except Exception as e:
             logger.error("Failed to save tasks file: {}".format(e))
 
@@ -281,10 +281,11 @@ class TaskManager:
     def _load_file():
         # type: () -> List[Dict[str, Any]]
         """Load tasks from .itasca-mcp-bridge/tasks.json."""
-        if not os.path.exists(TASKS_FILENAME):
+        tasks_filename = path_utils.tasks_file()
+        if not os.path.exists(tasks_filename):
             return []
         try:
-            with open(TASKS_FILENAME, 'r') as f:
+            with open(tasks_filename, 'r') as f:
                 return json.load(f)
         except Exception as e:
             logger.error("Failed to load tasks file: {}".format(e))
