@@ -13,7 +13,7 @@ Usage (in the product console CLI):
     itasca_mcp_bridge.start(mode="console")
 """
 
-__version__ = "0.1.3"
+__version__ = "0.1.4"
 
 
 # Keep global references to avoid Qt timer/callback garbage collection.
@@ -24,14 +24,34 @@ DEFAULT_MAX_TASKS_PER_TICK = 1
 VALID_RUNTIME_MODES = ("auto", "gui", "console")
 
 
+# Qt binding shipped with the host product varies by version:
+#   PFC 6/7 and early PFC 9 -> PySide2 (Qt5)
+#   PFC 9.7+                 -> PySide6 (Qt6)
+# Probe newest first so the same bridge build works across all of them.
+_QT_BINDINGS = ("PySide6", "PySide2")
+
+
+def _import_qtcore(logger=None):
+    # type: (...) -> object
+    """Return QtCore from the first available Qt binding, or None."""
+    for binding in _QT_BINDINGS:
+        try:
+            module = __import__(binding + ".QtCore", fromlist=["QtCore"])
+        except Exception:
+            continue
+        if logger is not None:
+            logger.info("Qt binding detected: {}".format(binding))
+        return module
+    return None
+
+
 def _start_qt_pump(main_executor, interval_ms, max_tasks_per_tick, logger):
     # type: (...) -> bool
     """Try to attach task processing to Qt event loop. Returns True on success."""
     global _qt_task_timer
 
-    try:
-        from PySide2 import QtCore  # type: ignore
-    except Exception:
+    QtCore = _import_qtcore(logger)
+    if QtCore is None:
         return False
 
     app = QtCore.QCoreApplication.instance()
