@@ -140,7 +140,13 @@ def start(
     interval_ms = _to_positive_int(timer_interval_ms, DEFAULT_TIMER_INTERVAL_MS)
 
     # ── Logging ───────────────────────────────────────────────
-    bridge_dir = os.path.join(os.getcwd(), ".itasca-mcp-bridge")
+    # Freeze the bridge root to the launch directory before any task can run.
+    # A user task script may later os.chdir() the whole interpreter; all bridge
+    # state (logs, tasks.json, command logs) must stay anchored here regardless.
+    from .utils import path_utils
+    path_utils.set_bridge_root(os.getcwd())
+
+    bridge_dir = path_utils.data_dir()
     if not os.path.exists(bridge_dir):
         os.makedirs(bridge_dir)
     log_file = os.path.join(bridge_dir, "bridge.log")
