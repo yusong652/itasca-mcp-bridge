@@ -4,6 +4,22 @@ All notable changes to `itasca-mcp-bridge` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2026-06-03
+
+### Fixed
+- Task log, `tasks.json`, and command-log paths are now anchored to a bridge
+  root frozen once at startup, instead of being re-resolved against the live
+  working directory on every access. A user task script that calls
+  `os.chdir()` moves the working directory of the whole embedded-Python
+  interpreter; previously this sent `check_task_status` to read the task log
+  at the post-chdir location, returning `(no output)` (`total_lines: 0`) for a
+  task whose log had in fact been written correctly through its still-open file
+  handle. `tasks.json` persistence was exposed to the same drift. Anchoring
+  every `.itasca-mcp-bridge/` path to the frozen root keeps logs and task state
+  at one stable on-disk location regardless of later chdir. Extends the
+  abspath-vs-CWD fix from 0.1.2 (command log) to the task FileBuffer log and
+  task persistence. Affects both PFC and FLAC, which share this bridge.
+
 ## [0.1.2] - 2026-05-29
 
 ### Fixed

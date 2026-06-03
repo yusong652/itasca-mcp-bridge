@@ -13,7 +13,7 @@ Usage (in the product console CLI):
     itasca_mcp_bridge.start(mode="console")
 """
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 
 
 # Keep global references to avoid Qt timer/callback garbage collection.
