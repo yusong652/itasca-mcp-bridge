@@ -4,6 +4,20 @@ All notable changes to `itasca-mcp-bridge` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - 2026-06-03
+
+### Fixed
+- Qt task-pump now starts on PFC 9.7+. `_start_qt_pump` hard-imported
+  `PySide2`, but PFC 9.7 (`pfc3d9_gui.exe`, Python 3.10) ships **PySide6**
+  (Qt6) with no PySide2 present. The import failed, so `mode="auto"` fell
+  back to the blocking console pump, whose `while True` loop froze the GUI
+  main thread — the "hang" on startup. The bridge now probes Qt bindings
+  newest-first (`PySide6`, then `PySide2`) and drives the `QTimer` task
+  pump through whichever is available, so the same build runs non-blocking
+  across PFC 6/7, early PFC 9 (PySide2) and PFC 9.7+ (PySide6). The
+  `QTimer` / `QCoreApplication.instance()` / `timeout.connect()` APIs are
+  identical across Qt5/Qt6, so no other changes were needed.
+
 ## [0.1.3] - 2026-06-03
 
 ### Fixed
