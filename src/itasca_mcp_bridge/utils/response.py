@@ -108,7 +108,7 @@ class TaskDataBuilder:
 
     def with_pagination(self, pagination):
         # type: (Optional[Dict[str, Any]]) -> TaskDataBuilder
-        """Add pagination metadata field (total_lines, line_range, has_older, has_newer)."""
+        """Add pagination metadata field (total_lines, line_range)."""
         if pagination is not None:
             self._data["pagination"] = pagination
         return self

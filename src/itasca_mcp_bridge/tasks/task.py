@@ -187,11 +187,14 @@ class ScriptTask:
         end_idx = max(0, total_lines - skip_newest)
         selected = lines[start_idx:end_idx]
 
+        # total_lines + line_range are self-describing: callers derive
+        # "older lines exist" (line_range start > 1) and "newer lines
+        # exist" (line_range end < total_lines) directly. The former
+        # has_older/has_newer booleans were redundant (has_newer was
+        # just an echo of skip_newest > 0), so they are no longer emitted.
         pagination = {
             "total_lines": total_lines,
             "line_range": "{}-{}".format(start_idx + 1, end_idx) if selected else "0-0",
-            "has_older": start_idx > 0,
-            "has_newer": skip_newest > 0,
         }
 
         text = "\n".join(selected) if selected else ""
@@ -210,7 +213,7 @@ class ScriptTask:
         """Get task status response with paginated output and timing.
 
         Pagination args are applied on the bridge side against the full
-        log file, so `total_lines`, `has_older`, and `filter_text` all
+        log file, so `total_lines`, `line_range`, and `filter_text` all
         reflect the real on-disk state (not a pre-truncated window).
         """
         current_status = self.status
