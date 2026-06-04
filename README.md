@@ -4,7 +4,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/itasca-mcp-bridge)](https://pypi.org/project/itasca-mcp-bridge/)
 
-Runtime bridge that runs inside an ITASCA product process (PFC, FLAC3D, ...)
+Runtime bridge that runs inside an ITASCA product process (PFC, FLAC, ...)
 and exposes the product's Python SDK as a WebSocket API, enabling execution
 tools for MCP servers such as [pfc-mcp](https://pypi.org/project/pfc-mcp/).
 

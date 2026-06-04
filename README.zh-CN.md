@@ -4,7 +4,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/itasca-mcp-bridge)](https://pypi.org/project/itasca-mcp-bridge/)
 
-运行在 ITASCA 产品进程内（PFC、FLAC3D 等）的 bridge，把产品的 Python SDK
+运行在 ITASCA 产品进程内（PFC、FLAC 等）的 bridge，把产品的 Python SDK
 以 WebSocket API 暴露出来，为 [pfc-mcp](https://pypi.org/project/pfc-mcp/)
 等 MCP 服务端提供执行类工具能力。
 
