@@ -8,11 +8,51 @@ Runtime bridge that runs inside an ITASCA product process (PFC, FLAC3D, ...)
 and exposes the product's Python SDK as a WebSocket API, enabling execution
 tools for MCP servers such as [pfc-mcp](https://pypi.org/project/pfc-mcp/).
 
-The bridge is product-neutral: its core mechanisms — console-output capture
-via `program log`, cycle callbacks via `itasca.set_callback`, and Python
-state persistence via `python-reset-state` — use the shared ITASCA command
-language / SDK and have been verified to behave identically on PFC and
-FLAC3D.
+The bridge is product-neutral: it drives the host through the shared ITASCA
+command language / Python SDK rather than any product-specific API.
+
+## Features
+
+- **Async tasks with progress polling.** Submit a long simulation script
+  (`pfc_execute_task`) and poll its status and paginated output while it
+  runs (`pfc_check_task_status`).
+- **Live REPL during a run.** Run `pfc_execute_code` against the running
+  task's namespace at any time to inspect state or tune parameters
+  mid-cycle — no need to bake probes into the script up front.
+- **Graceful interrupt.** Stop a long cycling task on request
+  (`pfc_interrupt_task`) without killing the product.
+- **Unified output capture.** Python `print` and product console output
+  (`itasca.command()` tables, list dumps, summaries) are interleaved in
+  execution order in the task log.
+
+## Architecture
+
+ITASCA's Python SDK is main-thread-only, so the bridge keeps the
+simulation on the main thread and serves remote requests around it with
+three parts:
+
+```mermaid
+flowchart TD
+    C[MCP client] -->|WebSocket| S[asyncio server<br/>background thread]
+    S -->|submit → Future| Q[MainThreadExecutor<br/>queue]
+    Q -->|Qt timer / blocking poll| M[PFC main thread<br/>itasca SDK + solver]
+    M -.->|set_callback at cycle gaps| CB[interrupt check<br/>+ snippet executor]
+    CB -.-> M
+```
+
+- **WebSocket server (background thread).** An asyncio server receives
+  messages, hands the work to the main thread, and awaits a `Future`. It
+  never touches the SDK directly, so lightweight calls (status, interrupt)
+  stay responsive even while a long task runs.
+- **Main-thread queue.** `MainThreadExecutor` holds a thread-safe queue
+  that the main thread drains — via a Qt timer in GUI mode, or a blocking
+  poll in console mode. Submitted task scripts (`pfc_execute_task`) run
+  here.
+- **Cycle-gap callbacks.** A cycling task holds the main thread, so two
+  `itasca.set_callback` hooks keep it reachable: an interrupt check that
+  stops the run (`pfc_interrupt_task`), and a snippet executor that runs
+  `pfc_execute_code` REPL calls in the gaps between cycles — sharing the
+  task's `__main__` namespace for live inspection and tuning.
 
 ## Quick Start
 
