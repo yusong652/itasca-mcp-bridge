@@ -14,13 +14,13 @@ command language / Python SDK rather than any product-specific API.
 ## Features
 
 - **Async tasks with progress polling.** Submit a long simulation script
-  (`pfc_execute_task`) and poll its status and paginated output while it
-  runs (`pfc_check_task_status`).
-- **Live REPL during a run.** Run `pfc_execute_code` against the running
+  (`execute_task` message) and poll its status and paginated output while
+  it runs (`check_task_status`).
+- **Live REPL during a run.** Send `execute_code` against the running
   task's namespace at any time to inspect state or tune parameters
   mid-cycle — no need to bake probes into the script up front.
 - **Graceful interrupt.** Stop a long cycling task on request
-  (`pfc_interrupt_task`) without killing the product.
+  (`interrupt_task`) without killing the product.
 - **Unified output capture.** Python `print` and product console output
   (`itasca.command()` tables, list dumps, summaries) are interleaved in
   execution order in the task log.
@@ -46,13 +46,32 @@ flowchart TD
   stay responsive even while a long task runs.
 - **Main-thread queue.** `MainThreadExecutor` holds a thread-safe queue
   that the main thread drains — via a Qt timer in GUI mode, or a blocking
-  poll in console mode. Submitted task scripts (`pfc_execute_task`) run
-  here.
+  poll in console mode. Submitted task scripts (`execute_task`) run here.
 - **Cycle-gap callbacks.** A cycling task holds the main thread, so two
   `itasca.set_callback` hooks keep it reachable: an interrupt check that
-  stops the run (`pfc_interrupt_task`), and a snippet executor that runs
-  `pfc_execute_code` REPL calls in the gaps between cycles — sharing the
+  stops the run (`interrupt_task`), and a snippet executor that runs
+  `execute_code` REPL calls in the gaps between cycles — sharing the
   task's `__main__` namespace for live inspection and tuning.
+
+## WebSocket protocol
+
+The bridge is the source of truth for the wire contract — MCP servers such
+as pfc-mcp and flac-mcp are clients of it. A request is a JSON object with a
+`type` and a `request_id`; the response echoes the `request_id`. The message
+types are product-neutral:
+
+| `type` (request) | Purpose | Key fields |
+|---|---|---|
+| `execute_task` | Submit a file-backed script as a tracked async task | `task_id`, `script_path`, `description` |
+| `check_task_status` | Poll a task's status and paginated log | `task_id`, `skip_newest`, `limit`, `filter_text` |
+| `list_tasks` | List known tasks | `offset`, `limit` |
+| `interrupt_task` | Request a graceful interrupt of a running task | `task_id` |
+| `execute_code` | Run a snippet in the running task's `__main__` (sync REPL) | `code`, `timeout_ms` |
+| `get_working_directory` | Report the product process working directory | — |
+| `ping` | Liveness check | — |
+
+> `pfc_task` is still accepted as a deprecated alias for `execute_task`, so
+> older clients keep working during the transition.
 
 ## Quick Start
 

@@ -7,7 +7,7 @@ Each handler module focuses on a specific domain of functionality.
 
 from .context import ServerContext
 from .tasks import (
-    handle_pfc_task,
+    handle_execute_task,
     handle_check_task_status,
     handle_list_tasks,
     handle_interrupt_task,
@@ -20,7 +20,7 @@ __all__ = [
     # Context
     "ServerContext",
     # Tasks
-    "handle_pfc_task",
+    "handle_execute_task",
     "handle_check_task_status",
     "handle_list_tasks",
     "handle_interrupt_task",

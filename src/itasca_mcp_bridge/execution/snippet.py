@@ -1,5 +1,5 @@
 """
-Snippet executor for pfc_execute_code.
+Snippet executor for execute_code.
 
 Both execute_code paths — the idle MainThreadExecutor queue path and the
 busy cycle-gap callback path — funnel through ``run_snippet`` so the
@@ -7,7 +7,7 @@ caller sees identical behaviour regardless of which scheduler delivers
 the code to PFC's main thread.
 
 Distinct from ``execution.script.ScriptRunner``, which serves tracked
-pfc_task scripts (file-backed, registered with TaskManager).
+execute_task scripts (file-backed, registered with TaskManager).
 
 Two cancellation paths land here:
 
@@ -85,7 +85,7 @@ def run_snippet(code, output_buffer, request_id=None):
     # on the way out. When this snippet runs inside a busy task's cycle
     # callback, the outer task already owns ``_current_task_id``; if we
     # cleared it unconditionally on exit, the still-running task would
-    # silently lose ``pfc_interrupt_task`` support — the PFC interrupt
+    # silently lose ``interrupt_task`` support — the PFC interrupt
     # callback reads ``_current_task_id`` and an empty value means
     # "no task to interrupt".
     prior_task = None  # type: Optional[str]

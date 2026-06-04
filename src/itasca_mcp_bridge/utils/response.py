@@ -29,7 +29,7 @@ def _truncate_output(text, max_chars=MAX_OUTPUT_CHARS):
     omitted = len(text) - len(tail)
     return (
         "... (truncated, {} earlier chars omitted; showing most recent {} chars. "
-        "Use pfc_check_task_status with skip_newest/limit/filter_text to page "
+        "Re-query task status with skip_newest/limit/filter_text to page "
         "within this window.)\n"
         .format(omitted, len(tail))
     ) + tail
