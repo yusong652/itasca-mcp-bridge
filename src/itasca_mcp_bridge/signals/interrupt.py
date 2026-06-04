@@ -140,7 +140,7 @@ def peek_current_task():
     when an execute_code snippet runs *inside* a running task's
     cycle-callback gap, we must not clobber the outer task's
     ``_current_task_id`` on the way out — that would silently disable
-    ``pfc_interrupt_task`` for the still-running task (its PFC callback
+    ``interrupt_task`` for the still-running task (its PFC callback
     checks ``_current_task_id`` and a cleared value means "no task to
     interrupt").
     """

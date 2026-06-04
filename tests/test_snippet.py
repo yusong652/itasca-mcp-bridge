@@ -1,5 +1,5 @@
 """Tests for execution.snippet.run_snippet — the shared compile/exec path
-behind both pfc_execute_code routes.
+behind both execute_code routes.
 
 Requires the `itasca_stub` fixture because `capture_pfc_console` imports
 itasca and pokes its `command` attribute.
@@ -109,7 +109,7 @@ class TestTaskIdSaveRestore:
     """The execute_code-inside-busy-task interleaving fix. run_snippet
     must save the outer task's `_current_task_id` on entry and restore
     it on exit — otherwise the still-running outer task silently loses
-    pfc_interrupt_task support."""
+    interrupt_task support."""
 
     def test_outer_task_id_preserved_across_snippet(self, itasca_stub):
         set_current_task("outer-task")

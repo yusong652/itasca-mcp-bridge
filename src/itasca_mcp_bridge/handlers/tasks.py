@@ -10,10 +10,12 @@ from .context import ServerContext
 from .helpers import truncate_message, require_field
 
 
-async def handle_pfc_task(ctx, data):
+async def handle_execute_task(ctx, data):
     # type: (ServerContext, Dict[str, Any]) -> Dict[str, Any]
     """
-    Handle pfc_task message - execute Python script from file path.
+    Handle execute_task message - execute Python script from file path.
+
+    The legacy ``pfc_task`` message type is an accepted alias and routes here.
 
     Args:
         ctx: Server context with dependencies

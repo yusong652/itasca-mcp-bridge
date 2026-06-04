@@ -13,11 +13,11 @@
 
 ## 功能
 
-- **异步任务 + 进度轮询。** 提交长仿真脚本（`pfc_execute_task`），运行期间轮询
-  其状态和分页输出（`pfc_check_task_status`）。
-- **运行中实时 REPL。** 随时对运行中任务的命名空间执行 `pfc_execute_code`，在
+- **异步任务 + 进度轮询。** 提交长仿真脚本（`execute_task` 消息），运行期间轮询
+  其状态和分页输出（`check_task_status`）。
+- **运行中实时 REPL。** 随时对运行中任务的命名空间发送 `execute_code`，在
   循环途中检查状态或调参——无需预先把探针写进脚本。
-- **优雅中断。** 按需终止长循环任务（`pfc_interrupt_task`），不杀进程。
+- **优雅中断。** 按需终止长循环任务（`interrupt_task`），不杀进程。
 - **统一输出捕获。** Python `print` 与产品控制台输出（`itasca.command()` 的表格、
   列表转储、命令摘要）按执行顺序交错记入任务日志。
 
@@ -40,11 +40,29 @@ flowchart TD
   （查状态、中断）也保持响应。
 - **主线程队列。** `MainThreadExecutor` 持有一个线程安全队列，由主线程排空——
   GUI 模式用 Qt 定时器，控制台模式用阻塞轮询。提交的任务脚本
-  （`pfc_execute_task`）在这里运行。
+  （`execute_task`）在这里运行。
 - **周期间隙回调。** 循环中的任务会占住主线程，因此用两个 `itasca.set_callback`
-  钩子保持可达：一个中断检查负责终止运行（`pfc_interrupt_task`），一个片段执行器
-  在周期间隙运行 `pfc_execute_code` 的 REPL 调用——并与任务共享同一个 `__main__`
+  钩子保持可达：一个中断检查负责终止运行（`interrupt_task`），一个片段执行器
+  在周期间隙运行 `execute_code` 的 REPL 调用——并与任务共享同一个 `__main__`
   命名空间，从而支持运行途中的实时检查与调参。
+
+## WebSocket 协议
+
+bridge 是 wire 契约的唯一真源——pfc-mcp、flac-mcp 等 MCP 服务端都是它的客户端。
+一条请求是带 `type` 和 `request_id` 的 JSON 对象，响应回显同一个 `request_id`。
+消息类型与具体产品无关：
+
+| `type`（请求） | 用途 | 关键字段 |
+|---|---|---|
+| `execute_task` | 提交文件脚本作为受跟踪的异步任务 | `task_id`、`script_path`、`description` |
+| `check_task_status` | 轮询任务状态与分页日志 | `task_id`、`skip_newest`、`limit`、`filter_text` |
+| `list_tasks` | 列出已知任务 | `offset`、`limit` |
+| `interrupt_task` | 请求优雅中断运行中的任务 | `task_id` |
+| `execute_code` | 在运行中任务的 `__main__` 里执行片段（同步 REPL） | `code`、`timeout_ms` |
+| `get_working_directory` | 返回产品进程的工作目录 | — |
+| `ping` | 存活检查 | — |
+
+> `pfc_task` 仍作为 `execute_task` 的废弃别名被接受，过渡期内老客户端可继续工作。
 
 ## 快速开始
 

@@ -17,7 +17,7 @@ from .execution import ScriptRunner, MainThreadExecutor
 from .tasks import TaskManager
 from .handlers import (
     ServerContext,
-    handle_pfc_task,
+    handle_execute_task,
     handle_check_task_status,
     handle_list_tasks,
     handle_execute_code,
@@ -81,7 +81,8 @@ class PFCWebSocketServer:
 
         # Message handlers registry (all handlers are async with unified signature)
         self._handlers = {
-            "pfc_task": handle_pfc_task,
+            "execute_task": handle_execute_task,
+            "pfc_task": handle_execute_task,  # legacy alias (deprecated)
             "check_task_status": handle_check_task_status,
             "list_tasks": handle_list_tasks,
             "get_working_directory": handle_get_working_directory,
@@ -129,7 +130,7 @@ class PFCWebSocketServer:
         try:
             # Parse incoming message
             data = json.loads(message)
-            msg_type = data.get("type", "pfc_task")
+            msg_type = data.get("type", "execute_task")
             request_id = data.get("request_id", "unknown")
 
             # Route to appropriate handler
