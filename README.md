@@ -95,9 +95,8 @@ Expected output:
 ============================================================
 Itasca MCP Bridge Server
 ============================================================
-  URL:         ws://localhost:9001
-  Log:         /your-working-dir/.itasca-mcp-bridge/bridge.log
-  Callbacks:   Interrupt, Executor (registered)
+  URL:  ws://localhost:9001
+  Log:  /your-working-dir/.itasca-mcp-bridge/bridge.log
 ============================================================
 ```
 
