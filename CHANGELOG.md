@@ -4,6 +4,29 @@ All notable changes to `itasca-mcp-bridge` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] - 2026-06-04
+
+### Changed
+- Renamed the WebSocket message type `pfc_task` → `execute_task`. The bridge
+  is product-neutral (consumed by both pfc-mcp and flac-mcp), yet `pfc_task`
+  was the only product-prefixed type in the protocol; `execute_task` is
+  symmetric with the existing `execute_code`. The handler registry maps both
+  keys to the same handler and the unknown-type fallback now defaults to
+  `execute_task`.
+- Neutralized remaining MCP tool-name references (`pfc_*`) in bridge
+  docstrings/comments and in the output-truncation hint
+  (`utils/response.py`), which previously named `pfc_check_task_status` in a
+  message returned to clients.
+
+### Deprecated
+- `pfc_task` is still accepted as an alias for `execute_task`, so clients that
+  have not switched yet keep working. It will be removed once downstream
+  clients no longer emit it.
+
+### Documentation
+- Documented the WebSocket message types in both READMEs (EN + zh-CN) as the
+  source-of-truth wire contract.
+
 ## [0.1.4] - 2026-06-03
 
 ### Fixed
