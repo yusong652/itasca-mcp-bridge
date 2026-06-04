@@ -8,10 +8,43 @@
 以 WebSocket API 暴露出来，为 [pfc-mcp](https://pypi.org/project/pfc-mcp/)
 等 MCP 服务端提供执行类工具能力。
 
-本 bridge 与具体产品解耦：其核心机制——通过 `program log` 捕获控制台输出、
-通过 `itasca.set_callback` 注册周期回调、通过 `python-reset-state` 保持
-Python 状态——使用的是 ITASCA 通用命令语言 / SDK，已验证在 PFC 与 FLAC3D
-上行为一致。
+本 bridge 与具体产品解耦：它通过 ITASCA 通用命令语言 / Python SDK 驱动宿主，
+而非任何产品专有 API。
+
+## 功能
+
+- **异步任务 + 进度轮询。** 提交长仿真脚本（`pfc_execute_task`），运行期间轮询
+  其状态和分页输出（`pfc_check_task_status`）。
+- **运行中实时 REPL。** 随时对运行中任务的命名空间执行 `pfc_execute_code`，在
+  循环途中检查状态或调参——无需预先把探针写进脚本。
+- **优雅中断。** 按需终止长循环任务（`pfc_interrupt_task`），不杀进程。
+- **统一输出捕获。** Python `print` 与产品控制台输出（`itasca.command()` 的表格、
+  列表转储、命令摘要）按执行顺序交错记入任务日志。
+
+## 架构
+
+ITASCA 的 Python SDK 只能在主线程使用，因此 bridge 让仿真留在主线程，并用三个
+部件在其周围响应远程请求：
+
+```mermaid
+flowchart TD
+    C[MCP 客户端] -->|WebSocket| S[asyncio 服务<br/>后台线程]
+    S -->|submit → Future| Q[MainThreadExecutor<br/>队列]
+    Q -->|Qt 定时器 / 阻塞轮询| M[PFC 主线程<br/>itasca SDK + 求解器]
+    M -.->|周期间隙 set_callback| CB[中断检查<br/>+ 片段执行器]
+    CB -.-> M
+```
+
+- **WebSocket 服务（后台线程）。** asyncio 服务接收消息，把工作交给主线程，
+  然后 await 一个 `Future`。它从不直接碰 SDK，因此即便长任务在跑，轻量调用
+  （查状态、中断）也保持响应。
+- **主线程队列。** `MainThreadExecutor` 持有一个线程安全队列，由主线程排空——
+  GUI 模式用 Qt 定时器，控制台模式用阻塞轮询。提交的任务脚本
+  （`pfc_execute_task`）在这里运行。
+- **周期间隙回调。** 循环中的任务会占住主线程，因此用两个 `itasca.set_callback`
+  钩子保持可达：一个中断检查负责终止运行（`pfc_interrupt_task`），一个片段执行器
+  在周期间隙运行 `pfc_execute_code` 的 REPL 调用——并与任务共享同一个 `__main__`
+  命名空间，从而支持运行途中的实时检查与调参。
 
 ## 快速开始
 
