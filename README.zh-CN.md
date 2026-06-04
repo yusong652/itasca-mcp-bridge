@@ -85,9 +85,8 @@ Bridge 会自动检测运行环境：GUI 使用 Qt 定时器，控制台使用�
 ============================================================
 Itasca MCP Bridge Server
 ============================================================
-  URL:         ws://localhost:9001
-  Log:         /your-working-dir/.itasca-mcp-bridge/bridge.log
-  Callbacks:   Interrupt, Executor (registered)
+  URL:  ws://localhost:9001
+  Log:  /your-working-dir/.itasca-mcp-bridge/bridge.log
 ============================================================
 ```
 

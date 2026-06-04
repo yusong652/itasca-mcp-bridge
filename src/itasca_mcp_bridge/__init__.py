@@ -176,10 +176,16 @@ def start(
     root_logger.handlers.clear()
 
     formatter = logging.Formatter('[%(asctime)s] %(levelname)s - %(message)s')
-    for handler in [logging.StreamHandler(sys.stdout),
-                    logging.FileHandler(log_file, mode='w', encoding='utf-8')]:
-        handler.setFormatter(formatter)
-        root_logger.addHandler(handler)
+    # Full INFO trail in bridge.log; stdout only surfaces warnings/errors so the
+    # PFC IPython console stays clean for non-developer users. Bookkeeping like
+    # callback registration and TaskManager init goes to file only.
+    file_handler = logging.FileHandler(log_file, mode='w', encoding='utf-8')
+    file_handler.setFormatter(formatter)
+    stream_handler = logging.StreamHandler(sys.stdout)
+    stream_handler.setFormatter(formatter)
+    stream_handler.setLevel(logging.WARNING)
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(stream_handler)
     logger = logging.getLogger("itasca-mcp-bridge")
 
     # ── Server components ─────────────────────────────────────
@@ -259,9 +265,8 @@ def start(
     print("\n" + "=" * 60)
     print("Itasca MCP Bridge Server")
     print("=" * 60)
-    print("  URL:         ws://{}:{}".format(host, port))
-    print("  Log:         {}".format(log_file))
-    print("  Callbacks:   Interrupt, Executor (registered)")
+    print("  URL:  ws://{}:{}".format(host, port))
+    print("  Log:  {}".format(log_file))
     print("=" * 60 + "\n")
 
     # ── Main-thread task pump ─────────────────────────────────
@@ -272,7 +277,6 @@ def start(
         pfc_server.set_runtime_mode("gui")
         print("Task loop running via Qt timer (interval={}ms, max_tasks_per_tick={})".format(
             interval_ms, max_tasks_per_tick))
-        print("Bridge started in non-blocking mode (GUI remains responsive).")
         return
 
     if mode == "gui":
