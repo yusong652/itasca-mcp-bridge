@@ -31,7 +31,7 @@ flowchart TD
     C[MCP 客户端] -->|WebSocket| S[asyncio 服务<br/>后台线程]
     S -->|submit → Future| Q[MainThreadExecutor<br/>队列]
     Q -->|Qt 定时器 / 阻塞轮询| M[PFC 主线程<br/>itasca SDK + 求解器]
-    M -.->|周期间隙 set_callback| CB[中断检查<br/>+ 片段执行器]
+    M -.->|每周期回调| CB[中断检查<br/>+ 片段执行器]
     CB -.-> M
 ```
 
