@@ -4,7 +4,7 @@ All notable changes to `itasca-mcp-bridge` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.6] - 2026-06-07
 
 ### Fixed
 - Callback (re)registration is now idempotent across ITASCA versions, fixing
@@ -26,6 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   independent JSON and contain no callback names — the root cause is the
   version-specific `set_callback` strictness, not save persistence. Affects
   both PFC and FLAC, which share this bridge.
+
+### Documentation
+- Corrected the architecture diagram callback label in both READMEs
+  (`set_callback at cycle gaps` → `callback at cycle` / `每周期回调`): the
+  interrupt check and snippet executor are registered at a fixed cycle point
+  and fire once per cycle, not in the gaps between cycles.
 
 ## [0.1.5] - 2026-06-04
 
