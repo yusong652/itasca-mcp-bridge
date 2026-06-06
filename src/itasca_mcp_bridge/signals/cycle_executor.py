@@ -29,7 +29,7 @@ try:
 except ImportError:
     from Queue import Queue, Empty  # type: ignore
 
-from .positions import EXECUTOR_CALLBACK_POSITION
+from .positions import EXECUTOR_CALLBACK_POSITION, register_cycle_callback
 
 # Module logger
 logger = logging.getLogger("itasca-mcp-bridge")
@@ -178,8 +178,8 @@ def register_executor_callback(itasca_module, position=EXECUTOR_CALLBACK_POSITIO
         import __main__
         __main__._pfc_executor_callback = _pfc_executor_callback  # type: ignore[attr-defined]
 
-        # Register with PFC
-        itasca_module.set_callback("_pfc_executor_callback", position)
+        # Register with PFC (remove-before-register; see register_cycle_callback).
+        register_cycle_callback(itasca_module, "_pfc_executor_callback", position)
 
         _callback_registered = True
         logger.info("Executor callback registered (position=%.1f)", position)

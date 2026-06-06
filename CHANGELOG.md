@@ -4,6 +4,29 @@ All notable changes to `itasca-mcp-bridge` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- Callback (re)registration is now idempotent across ITASCA versions, fixing
+  a hard `RuntimeError: Failed to register interrupt callback` (and the
+  matching executor error) on PFC 6.0. `itasca.set_callback` is **strict** on
+  PFC 6.0 — re-registering an already-registered `(name, position)` raises
+  `ValueError: Function <name> is already registered as a callback at position
+  <p> in the cycle sequence` — whereas PFC 7.0 silently accepts it, which is
+  why this never surfaced there. Compounding it, `model new` clears the
+  cycle-callback registry but `model restore` does **not** on PFC 6.0, so the
+  bridge's post-restore re-registration hit the strict path and aborted the
+  whole `model restore`; a second `start()` (e.g. re-running `addon.py`) failed
+  the same way. The two reserved cycle callbacks are now attached through a
+  shared `register_cycle_callback` helper that removes before it registers
+  (`remove_callback` is idempotent and keyed by name+position, so it only ever
+  clears the bridge's own `_pfc_interrupt_check` / `_pfc_executor_callback` and
+  never a user callback sharing the same cycle point). Earlier diagnosis
+  blaming callbacks "baked into saves" was wrong: `.sav` files are version-
+  independent JSON and contain no callback names — the root cause is the
+  version-specific `set_callback` strictness, not save persistence. Affects
+  both PFC and FLAC, which share this bridge.
+
 ## [0.1.5] - 2026-06-04
 
 ### Changed
