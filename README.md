@@ -36,7 +36,7 @@ flowchart TD
     C[MCP client] -->|WebSocket| S[asyncio server<br/>background thread]
     S -->|submit → Future| Q[MainThreadExecutor<br/>queue]
     Q -->|Qt timer / blocking poll| M[PFC main thread<br/>itasca SDK + solver]
-    M -.->|set_callback at cycle gaps| CB[interrupt check<br/>+ snippet executor]
+    M -.->|callback at cycle| CB[interrupt check<br/>+ snippet executor]
     CB -.-> M
 ```
 
