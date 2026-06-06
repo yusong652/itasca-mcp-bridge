@@ -22,7 +22,7 @@ import threading
 import logging
 from typing import Any, Optional
 
-from .positions import INTERRUPT_CALLBACK_POSITION, EXECUTOR_CALLBACK_POSITION
+from .positions import INTERRUPT_CALLBACK_POSITION, EXECUTOR_CALLBACK_POSITION, register_cycle_callback
 
 # Module logger
 logger = logging.getLogger("itasca-mcp-bridge")
@@ -232,7 +232,7 @@ def _re_register_callback(itasca_module, position=INTERRUPT_CALLBACK_POSITION):
     """
     import __main__
     __main__._pfc_interrupt_check = _pfc_interrupt_check  # type: ignore[attr-defined]
-    itasca_module.set_callback("_pfc_interrupt_check", position)
+    register_cycle_callback(itasca_module, "_pfc_interrupt_check", position)
     logger.debug("Interrupt callback re-registered after model reset")
 
     # Also re-register executor callback if it was registered
@@ -240,7 +240,7 @@ def _re_register_callback(itasca_module, position=INTERRUPT_CALLBACK_POSITION):
         from .cycle_executor import _pfc_executor_callback, is_executor_callback_registered
         if is_executor_callback_registered():
             __main__._pfc_executor_callback = _pfc_executor_callback  # type: ignore[attr-defined]
-            itasca_module.set_callback("_pfc_executor_callback", EXECUTOR_CALLBACK_POSITION)
+            register_cycle_callback(itasca_module, "_pfc_executor_callback", EXECUTOR_CALLBACK_POSITION)
             logger.debug("Executor callback re-registered after model reset")
     except ImportError:
         pass  # cycle_executor not available
@@ -278,8 +278,10 @@ def register_interrupt_callback(itasca_module, position=INTERRUPT_CALLBACK_POSIT
         import __main__
         __main__._pfc_interrupt_check = _pfc_interrupt_check  # type: ignore[attr-defined]
 
-        # Register with PFC
-        itasca_module.set_callback("_pfc_interrupt_check", position)
+        # Register with PFC (remove-before-register: idempotent across versions;
+        # PFC 6.0 set_callback is strict and model restore does not clear the
+        # registry, so a plain set_callback would collide. See register_cycle_callback.)
+        register_cycle_callback(itasca_module, "_pfc_interrupt_check", position)
 
         # Wrap itasca.command to:
         #   1. Keep _pfc_interrupt_check visible in the current __main__ (some
