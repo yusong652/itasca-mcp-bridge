@@ -123,15 +123,24 @@ def _latest_from_simple_index(index_url):
 
 def check_latest_version():
     # type: () -> str
-    """Best-effort latest published version; None if unreachable."""
+    """Best-effort latest published version; None if unreachable.
+
+    The simple-index HTML page is checked before the JSON API: right after
+    a release the JSON API (and pip's PEP 691 JSON variant) can lag the
+    HTML page by an hour or more on some CDN edges, which would delay
+    upgrade detection. Our plain GET (no Accept header) always receives
+    the fresher HTML variant.
+    """
     override = _index_override()
     if override:
         return _latest_from_simple_index(override)
 
+    latest = _latest_from_simple_index(DEFAULT_INDEXES[0][0])
+    if latest is not None:
+        return latest
     latest = _latest_from_pypi_json()
     if latest is not None:
         return latest
-    # PyPI unreachable; the mirror serves the simple index only.
     for index_url, _hosts in DEFAULT_INDEXES[1:]:
         latest = _latest_from_simple_index(index_url)
         if latest is not None:
