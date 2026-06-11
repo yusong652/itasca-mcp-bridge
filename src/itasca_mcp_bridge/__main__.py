@@ -17,9 +17,11 @@ def main():
     parser.add_argument("--port", type=int, default=9001, help="server port (default: 9001)")
     parser.add_argument("--mode", choices=["auto", "gui", "console"], default="auto",
                         help="task pump mode (default: auto)")
+    parser.add_argument("--no-upgrade", action="store_true",
+                        help="skip the PyPI update check and start the installed version")
     args = parser.parse_args()
 
-    start(host=args.host, port=args.port, mode=args.mode)
+    start(host=args.host, port=args.port, mode=args.mode, auto_upgrade=not args.no_upgrade)
 
 
 main()
