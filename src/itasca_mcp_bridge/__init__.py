@@ -21,6 +21,7 @@ installed version.
 
 __version__ = "0.2.0"
 
+from .announce import whats_new  # noqa: F401  (console convenience)
 from .runtime import (  # noqa: F401  (re-exported for compatibility)
     DEFAULT_TIMER_INTERVAL_MS,
     DEFAULT_MAX_TASKS_PER_TICK,
