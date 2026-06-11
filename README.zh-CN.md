@@ -85,6 +85,13 @@ itasca_mcp_bridge.start()
 （Python 3.6：`pip_main(["install", "--user", "websockets==9.1"])`；
 Python 3.10 用 `websockets==16.0`）。
 
+每次 `start()` 时 bridge 会检查 PyPI 是否有新版本（5 秒超时；pypi.org
+不可达时回退到清华镜像），有则先自动升级再启动。检查是尽力而为的——
+离线或安装失败都会回退到已安装版本直接启动。如需锁定当前版本，调用
+`start(auto_upgrade=False)` 或设置环境变量
+`ITASCA_MCP_BRIDGE_AUTO_UPGRADE=0`。企业内部镜像可通过
+`ITASCA_MCP_PIP_INDEX_URL` 配置。
+
 ### 从源码运行
 
 ```python
@@ -103,8 +110,9 @@ Bridge 会自动检测运行环境：GUI 使用 Qt 定时器，控制台使用�
 ============================================================
 Itasca MCP Bridge Server
 ============================================================
-  URL:  ws://localhost:9001
-  Log:  /your-working-dir/.itasca-mcp-bridge/bridge.log
+  Version:  0.2.0
+  URL:      ws://localhost:9001
+  Log:      /your-working-dir/.itasca-mcp-bridge/bridge.log
 ============================================================
 ```
 

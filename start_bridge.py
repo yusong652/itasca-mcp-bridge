@@ -8,7 +8,10 @@ from the product's IPython console:
 
 Equivalent to:
     import itasca_mcp_bridge
-    itasca_mcp_bridge.start()
+    itasca_mcp_bridge.start(auto_upgrade=False)
+
+Auto-upgrade is disabled here: pulling the PyPI release over a source
+checkout would shadow the code under development.
 """
 
 import os
@@ -27,7 +30,7 @@ import itasca_mcp_bridge  # type: ignore  # noqa: E402
 
 
 def main():
-    itasca_mcp_bridge.start()
+    itasca_mcp_bridge.start(auto_upgrade=False)
 
 
 if __name__ == "__main__":

@@ -94,6 +94,14 @@ embedded Python (`9.1` for Python 3.6, `16.0` for Python 3.10). If it is
 missing or mismatched, install it the same way (`pip_main(["install",
 "--user", "websockets==9.1"])` on Python 3.6, `websockets==16.0` on 3.10).
 
+On every `start()` the bridge checks PyPI for a newer release (5-second
+timeout; the Tsinghua mirror is tried when pypi.org is unreachable) and
+self-upgrades before starting. The check is best-effort -- offline
+machines and failed installs fall back to the installed version. To pin
+the installed version, call `start(auto_upgrade=False)` or set the
+environment variable `ITASCA_MCP_BRIDGE_AUTO_UPGRADE=0`. Corporate
+mirrors can be configured with `ITASCA_MCP_PIP_INDEX_URL`.
+
 ### Run from a source checkout
 
 ```python
@@ -114,8 +122,9 @@ Expected output:
 ============================================================
 Itasca MCP Bridge Server
 ============================================================
-  URL:  ws://localhost:9001
-  Log:  /your-working-dir/.itasca-mcp-bridge/bridge.log
+  Version:  0.2.0
+  URL:      ws://localhost:9001
+  Log:      /your-working-dir/.itasca-mcp-bridge/bridge.log
 ============================================================
 ```
 
