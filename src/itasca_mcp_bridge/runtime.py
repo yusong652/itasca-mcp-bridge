@@ -252,6 +252,15 @@ def start(
     print("  Log:      {}".format(log_file))
     print("=" * 60 + "\n")
 
+    if upgraded_from:
+        # Surface what the self-upgrade just delivered. Never let the
+        # announcement block a successful start.
+        try:
+            from .announce import whats_new
+            whats_new(since=upgraded_from, until=__version__)
+        except Exception:
+            pass
+
     # ── Main-thread task pump ─────────────────────────────────
     use_qt = mode in ("auto", "gui")
     use_blocking = mode in ("auto", "console")

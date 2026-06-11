@@ -92,6 +92,9 @@ Python 3.10 用 `websockets==16.0`）。
 `ITASCA_MCP_BRIDGE_AUTO_UPGRADE=0`。企业内部镜像可通过
 `ITASCA_MCP_PIP_INDEX_URL` 配置。
 
+自动升级完成后，横幅下方会附上一份简短的 "What's new"，列出这次升级
+带来的改进；随时可调用 `itasca_mcp_bridge.whats_new()` 重新查看。
+
 ### 从源码运行
 
 ```python

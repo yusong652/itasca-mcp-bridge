@@ -65,21 +65,34 @@ class TestLatestFromSimpleIndex:
 
 
 class TestCheckLatestVersion:
-    def test_prefers_pypi_json(self, monkeypatch):
+    def test_prefers_primary_simple_index(self, monkeypatch):
+        # The simple HTML page refreshes before the JSON API after a release;
+        # the JSON API must not even be queried when the page answers.
+        monkeypatch.setattr(upgrade, "_latest_from_simple_index", lambda url: "0.2.0")
+        monkeypatch.setattr(
+            upgrade, "_latest_from_pypi_json",
+            lambda: (_ for _ in ()).throw(AssertionError("JSON API is the fallback")),
+        )
+        assert upgrade.check_latest_version() == "0.2.0"
+
+    def test_falls_back_to_json_api(self, monkeypatch):
+        monkeypatch.setattr(upgrade, "_latest_from_simple_index", lambda url: None)
         monkeypatch.setattr(upgrade, "_latest_from_pypi_json", lambda: "0.2.0")
         assert upgrade.check_latest_version() == "0.2.0"
 
-    def test_falls_back_to_mirror(self, monkeypatch):
+    def test_falls_back_to_mirror_last(self, monkeypatch):
         monkeypatch.setattr(upgrade, "_latest_from_pypi_json", lambda: None)
         seen = []
 
         def fake_simple(index_url):
             seen.append(index_url)
-            return "0.1.9"
+            if index_url == upgrade.DEFAULT_INDEXES[1][0]:
+                return "0.1.9"
+            return None
 
         monkeypatch.setattr(upgrade, "_latest_from_simple_index", fake_simple)
         assert upgrade.check_latest_version() == "0.1.9"
-        assert seen == [upgrade.DEFAULT_INDEXES[1][0]]
+        assert seen == [upgrade.DEFAULT_INDEXES[0][0], upgrade.DEFAULT_INDEXES[1][0]]
 
     def test_index_override_skips_pypi_json(self, monkeypatch):
         monkeypatch.setenv(upgrade.ENV_INDEX_URL, "https://corp/simple/")

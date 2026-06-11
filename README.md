@@ -102,6 +102,10 @@ the installed version, call `start(auto_upgrade=False)` or set the
 environment variable `ITASCA_MCP_BRIDGE_AUTO_UPGRADE=0`. Corporate
 mirrors can be configured with `ITASCA_MCP_PIP_INDEX_URL`.
 
+After a self-upgrade the banner is followed by a short "What's new" list
+of the release highlights you just received; call
+`itasca_mcp_bridge.whats_new()` to reprint it anytime.
+
 ### Run from a source checkout
 
 ```python
