@@ -19,7 +19,7 @@ environment variable `ITASCA_MCP_BRIDGE_AUTO_UPGRADE=0` to pin the
 installed version.
 """
 
-__version__ = "0.1.6"
+__version__ = "0.2.0"
 
 from .runtime import (  # noqa: F401  (re-exported for compatibility)
     DEFAULT_TIMER_INTERVAL_MS,
