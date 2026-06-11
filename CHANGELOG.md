@@ -4,6 +4,31 @@ All notable changes to `itasca-mcp-bridge` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-06-11
+
+### Added
+- `start()` now self-upgrades the bridge from PyPI before starting, so the
+  plain two-liner (`import itasca_mcp_bridge; itasca_mcp_bridge.start()`)
+  keeps installs current without `addon.py`. A version pre-check with a 5 s
+  hard timeout (PyPI JSON API, Tsinghua-mirror fallback) decides whether the
+  in-process pip runs at all; every failure on the upgrade path — offline,
+  blocked proxy, pip error — falls back to starting the installed version.
+  After a successful install the loaded modules are reloaded so the new code
+  serves the current session. Opt out per call with
+  `start(auto_upgrade=False)`, globally with `ITASCA_MCP_BRIDGE_AUTO_UPGRADE=0`,
+  or point at a corporate mirror with `ITASCA_MCP_PIP_INDEX_URL` (the legacy
+  `PFC_MCP_PIP_INDEX_URL` is still honoured). The CLI gains `--no-upgrade`.
+- The startup banner now shows the bridge version, and reports the version
+  jump (`Upgraded: 0.1.6 -> 0.2.0`) when a self-upgrade just happened.
+
+### Changed
+- The runtime (server startup + task pumps) moved from `__init__.py` to a new
+  `runtime.py`; the package entry is now a thin `start()` wrapper. The
+  constants `DEFAULT_TIMER_INTERVAL_MS`, `DEFAULT_MAX_TASKS_PER_TICK` and
+  `VALID_RUNTIME_MODES` remain re-exported from the package root.
+- `start_bridge.py` (source-checkout entry) pins `auto_upgrade=False` so
+  development code is never shadowed by the PyPI release.
+
 ## [0.1.6] - 2026-06-07
 
 ### Fixed
