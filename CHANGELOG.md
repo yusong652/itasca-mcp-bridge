@@ -4,6 +4,23 @@ All notable changes to `itasca-mcp-bridge` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-06-11
+
+### Added
+- After a self-upgrade, the startup banner is followed by a short "What's
+  new" list of the release highlights just received. The announcements ship
+  inside the package (`announce.py`) keyed by version, so the list covers
+  the whole `(old, new]` jump and works offline with no changelog fetch.
+  `itasca_mcp_bridge.whats_new()` reprints it on demand.
+
+### Fixed
+- The self-upgrade version pre-check now scrapes the pypi.org simple-index
+  HTML page before the JSON API. Observed right after the 0.2.0 release:
+  the JSON API (and the PEP 691 JSON variant pip requests) lagged the HTML
+  page by an hour on some CDN edges, which would have delayed upgrade
+  detection by the same amount; a plain GET always receives the fresher
+  HTML variant.
+
 ## [0.2.0] - 2026-06-11
 
 ### Added
