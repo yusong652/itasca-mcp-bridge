@@ -33,10 +33,8 @@ MODULE_NAME = "itasca_mcp_bridge"
 # upgrade they already performed is not re-checked.
 ENV_AUTO_UPGRADE = "ITASCA_MCP_BRIDGE_AUTO_UPGRADE"
 
-# Custom package index (corporate mirrors). The legacy PFC-specific name
-# is honoured for users who configured it for addon.py.
+# Custom package index (corporate mirrors).
 ENV_INDEX_URL = "ITASCA_MCP_PIP_INDEX_URL"
-ENV_INDEX_URL_LEGACY = "PFC_MCP_PIP_INDEX_URL"
 
 # Internal handoff: set just before the freshly upgraded module's start()
 # runs, so its startup banner can report the version jump. Popped on read.
@@ -66,7 +64,7 @@ def env_allows_upgrade():
 
 def _index_override():
     # type: () -> str
-    return os.environ.get(ENV_INDEX_URL) or os.environ.get(ENV_INDEX_URL_LEGACY) or ""
+    return os.environ.get(ENV_INDEX_URL) or ""
 
 
 def _parse_version(text):

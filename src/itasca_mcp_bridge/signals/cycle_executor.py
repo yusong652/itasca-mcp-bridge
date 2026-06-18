@@ -1,9 +1,9 @@
 """
 Cycle-gap executor for execute_code snippets.
 
-When PFC's main thread is busy running a tracked task (its main
+When ITASCA's main thread is busy running a tracked task (its main
 ``task_queue`` is blocked by a long script), short execute_code
-snippets still need to land. This module registers a PFC callback that
+snippets still need to land. This module registers an ITASCA callback that
 fires at cycle boundaries and drains a pending-snippet queue, letting
 execute_code requests slip through gaps in the running task.
 
@@ -12,7 +12,7 @@ through ``MainThreadExecutor`` directly.
 
 Architecture:
 - WebSocket thread: calls ``submit_snippet(code, request_id)`` -> queued
-- PFC callback:     ``_pfc_executor_callback()`` batch-executes pending
+- ITASCA callback:  ``_pfc_executor_callback()`` batch-executes pending
 - Results returned via ``Future`` objects
 
 Python 3.6 compatible implementation.
@@ -53,14 +53,14 @@ MAX_BATCH_SIZE = 10
 def submit_snippet(code, request_id):
     # type: (str, str) -> Future
     """
-    Queue a code snippet for execution at the next PFC cycle gap.
+    Queue a code snippet for execution at the next ITASCA cycle gap.
 
     Called from the WebSocket handler thread when the main task queue is
-    blocked by a running task. The snippet is queued; the PFC callback
+    blocked by a running task. The snippet is queued; the ITASCA callback
     batch-executes pending snippets at the next cycle boundary.
 
     Args:
-        code: Python source to evaluate against the PFC ``__main__`` namespace.
+        code: Python source to evaluate against the ITASCA ``__main__`` namespace.
         request_id: Identifier carried through for downstream cancellation
             (used by future interrupt-injection logic; currently opaque).
 
@@ -81,7 +81,7 @@ def submit_snippet(code, request_id):
 
 
 # =============================================================================
-# PFC Callback Function (Executed in main thread during cycle gaps)
+# ITASCA Callback Function (Executed in main thread during cycle gaps)
 # =============================================================================
 
 def _run_pending_snippet(code, request_id, future):
@@ -110,16 +110,16 @@ def _run_pending_snippet(code, request_id, future):
 def _pfc_executor_callback():
     # type: () -> None
     """
-    PFC callback - batch-execute pending snippets.
+    ITASCA callback - batch-execute pending snippets.
 
-    Called by PFC after each cycle. Processes up to ``MAX_BATCH_SIZE``
+    Called by ITASCA after each cycle. Processes up to ``MAX_BATCH_SIZE``
     pending snippet requests in the queue.
 
     No parameters - reads from global ``_pending_queue``.
 
     Note:
         - Fast path when queue empty (just an empty check)
-        - Each snippet executes in PFC main thread
+        - Each snippet executes in ITASCA main thread
         - Results returned via ``Future.set_result()``
     """
     # Fast path: no pending snippets (99% of the time)
@@ -151,14 +151,14 @@ _callback_registered = False
 def register_executor_callback(itasca_module, position=EXECUTOR_CALLBACK_POSITION):
     # type: (Any, float) -> bool
     """
-    Register the snippet-batching callback with PFC.
+    Register the snippet-batching callback with ITASCA.
 
     Must be called once during server startup. This function:
     1. Injects ``_pfc_executor_callback`` into ``__main__`` namespace
     2. Registers callback with ``itasca.set_callback()``
 
     Args:
-        itasca_module: The itasca module (imported in PFC environment).
+        itasca_module: The itasca module (imported in ITASCA environment).
         position: Cycle point for set_callback
             (default: EXECUTOR_CALLBACK_POSITION; see signals.positions).
             Must stay > INTERRUPT_CALLBACK_POSITION so the interrupt
@@ -174,11 +174,11 @@ def register_executor_callback(itasca_module, position=EXECUTOR_CALLBACK_POSITIO
         return False
 
     try:
-        # Inject function into __main__ namespace (required for PFC lookup)
+        # Inject function into __main__ namespace (required for ITASCA lookup)
         import __main__
         __main__._pfc_executor_callback = _pfc_executor_callback  # type: ignore[attr-defined]
 
-        # Register with PFC (remove-before-register; see register_cycle_callback).
+        # Register with ITASCA (remove-before-register; see register_cycle_callback).
         register_cycle_callback(itasca_module, "_pfc_executor_callback", position)
 
         _callback_registered = True

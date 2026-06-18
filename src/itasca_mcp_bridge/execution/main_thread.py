@@ -1,7 +1,7 @@
 """
-PFC Main Thread Executor - Thread-safe task queue for main thread execution.
+Main Thread Executor - Thread-safe task queue for main thread execution.
 
-This module provides task queue mechanism to execute PFC commands in the main thread
+This module provides task queue mechanism to execute ITASCA commands in the main thread
 while WebSocket server runs in background thread.
 
 Python 3.6 compatible implementation.
@@ -19,7 +19,7 @@ logger = logging.getLogger("itasca-mcp-bridge")
 
 class MainThreadExecutor:
     """
-    Execute tasks in PFC IPython main thread via queue.
+    Execute tasks in ITASCA IPython main thread via queue.
 
     WebSocket server (background thread) submits tasks via submit(),
     IPython main thread processes tasks via process_tasks().

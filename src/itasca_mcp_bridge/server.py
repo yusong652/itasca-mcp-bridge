@@ -1,7 +1,7 @@
 """
-PFC WebSocket Server - Lightweight server to run in PFC GUI IPython shell.
+ITASCA WebSocket Server - Lightweight server to run in the ITASCA product GUI IPython shell.
 
-This module provides WebSocket server components for remote PFC control.
+This module provides WebSocket server components for remote ITASCA control.
 Server startup should be done via start_bridge.py script.
 """
 
@@ -31,9 +31,9 @@ logger = logging.getLogger("itasca-mcp-bridge")
 
 
 class PFCWebSocketServer:
-    """WebSocket server for PFC script execution via main thread queue.
+    """WebSocket server for ITASCA script execution via main thread queue.
 
-    Script-only workflow: All PFC operations must be executed through Python
+    Script-only workflow: All ITASCA operations must be executed through Python
     scripts using itasca.command(). Direct command execution is no longer supported.
     """
 
@@ -82,7 +82,6 @@ class PFCWebSocketServer:
         # Message handlers registry (all handlers are async with unified signature)
         self._handlers = {
             "execute_task": handle_execute_task,
-            "pfc_task": handle_execute_task,  # legacy alias (deprecated)
             "check_task_status": handle_check_task_status,
             "list_tasks": handle_list_tasks,
             "get_working_directory": handle_get_working_directory,
@@ -168,7 +167,7 @@ class PFCWebSocketServer:
         # type: (str, str) -> None
         """Broadcast task status change to all connected clients.
 
-        Called from the PFC main thread (via Future callback), not the
+        Called from the ITASCA main thread (via Future callback), not the
         asyncio event loop thread, so we use run_coroutine_threadsafe.
         """
         if not self._loop or not self.active_connections:
@@ -271,7 +270,7 @@ def create_server(
 ):
     # type: (...) -> PFCWebSocketServer
     """
-    Create a PFC WebSocket server instance.
+    Create an ITASCA WebSocket server instance.
 
     Args:
         main_executor: Main thread executor for queue-based command execution

@@ -21,7 +21,7 @@ class ServerContext:
 
     Attributes:
         task_manager: Manages task lifecycle and status tracking
-        script_runner: Runs PFC Python scripts via main thread queue
+        script_runner: Runs ITASCA Python scripts via main thread queue
         main_executor: Queue-based main thread execution
         runtime_mode: Active bridge runtime mode ("gui" or "console")
     """

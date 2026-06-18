@@ -1,7 +1,7 @@
 """
-PFC Task Lifecycle Management.
+Task Lifecycle Management.
 
-Task tracking, persistence, and status queries for long-running PFC scripts.
+Task tracking, persistence, and status queries for long-running ITASCA scripts.
 
 Python 3.6 compatible implementation.
 """

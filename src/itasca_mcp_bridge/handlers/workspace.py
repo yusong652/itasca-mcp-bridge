@@ -31,7 +31,7 @@ async def handle_get_working_directory(ctx, data):
             "type": "result",
             "request_id": request_id,
             "status": "success",
-            "message": f"PFC working directory: {cwd}",
+            "message": f"product working directory: {cwd}",
             "data": {
                 "working_directory": cwd,
                 "runtime_mode": getattr(ctx, "runtime_mode", "unknown"),

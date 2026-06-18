@@ -35,7 +35,7 @@ three parts:
 flowchart TD
     C[MCP client] -->|WebSocket| S[asyncio server<br/>background thread]
     S -->|submit → Future| Q[MainThreadExecutor<br/>queue]
-    Q -->|Qt timer / blocking poll| M[PFC main thread<br/>itasca SDK + solver]
+    Q -->|Qt timer / blocking poll| M[product main thread<br/>itasca SDK + solver]
     M -.->|callback at cycle| CB[interrupt check<br/>+ snippet executor]
     CB -.-> M
 ```
@@ -69,9 +69,6 @@ types are product-neutral:
 | `execute_code` | Run a snippet in the running task's `__main__` (sync REPL) | `code`, `timeout_ms` |
 | `get_working_directory` | Report the product process working directory | — |
 | `ping` | Liveness check | — |
-
-> `pfc_task` is still accepted as a deprecated alias for `execute_task`, so
-> older clients keep working during the transition.
 
 ## Quick Start
 

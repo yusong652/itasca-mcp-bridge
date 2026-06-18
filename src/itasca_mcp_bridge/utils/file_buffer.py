@@ -25,7 +25,7 @@ class FileBuffer:
     """
     A file-like buffer that writes output directly to disk.
 
-    Designed for capturing stdout from long-running PFC simulations.
+    Designed for capturing stdout from long-running ITASCA simulations.
     Uses Python's file buffering to batch writes efficiently.
 
     Features:
@@ -226,7 +226,7 @@ class FileBuffer:
 class TeeBuffer:
     """Write to both the original stdout and a buffer simultaneously.
 
-    Acts as a transparent tee: task output appears in the PFC terminal
+    Acts as a transparent tee: task output appears in the product terminal
     AND is captured to the buffer for polling via check_task_status.
     """
 

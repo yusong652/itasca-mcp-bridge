@@ -1,7 +1,7 @@
 """
-PFC WebSocket Server Message Handlers.
+WebSocket Server Message Handlers.
 
-This module provides modular message handlers for the PFC WebSocket server.
+This module provides modular message handlers for the ITASCA WebSocket server.
 Each handler module focuses on a specific domain of functionality.
 """
 

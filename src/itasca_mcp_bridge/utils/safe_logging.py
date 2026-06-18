@@ -20,7 +20,7 @@ held) and ``SETUP_FINALLY`` registering the ``finally``. If the injected
 ``finally`` registered and the handler's ``RLock`` is leaked -- held
 forever by a thread that has already returned to the pump loop. The
 background WebSocket thread then blocks the first time it logs anything,
-freezing the whole bridge until PFC is restarted.
+freezing the whole bridge until the product is restarted.
 
 CPython closed this in 3.11 by switching ``handle`` to ``with
 self.lock:``, which compiles to a single ``SETUP_WITH`` opcode that

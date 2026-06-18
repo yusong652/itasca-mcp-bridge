@@ -4,14 +4,14 @@ Snippet executor for execute_code.
 Both execute_code paths — the idle MainThreadExecutor queue path and the
 busy cycle-gap callback path — funnel through ``run_snippet`` so the
 caller sees identical behaviour regardless of which scheduler delivers
-the code to PFC's main thread.
+the code to ITASCA's main thread.
 
 Distinct from ``execution.script.ScriptRunner``, which serves tracked
 execute_task scripts (file-backed, registered with TaskManager).
 
 Two cancellation paths land here:
 
-* L1 (interrupt flag): the PFC interrupt callback sets a flag that
+* L1 (interrupt flag): the ITASCA interrupt callback sets a flag that
   ``_pfc_interrupt_check`` reads each cycle, raising ``InterruptedError``
   at the next cycle boundary. Pairs with ``set_current_task`` /
   ``clear_interrupt`` below.
@@ -56,9 +56,9 @@ SNIPPET_LABEL = "<execute_code>"
 def run_snippet(code, output_buffer, request_id=None):
     # type: (str, Any, Optional[str]) -> Dict[str, Any]
     """
-    Compile and execute ``code`` against the PFC ``__main__`` namespace.
+    Compile and execute ``code`` against the ITASCA ``__main__`` namespace.
 
-    Captures stdout (both Python ``print`` and PFC console output) into
+    Captures stdout (both Python ``print`` and ITASCA console output) into
     ``output_buffer``. Always returns a result dict; never raises for
     user-code errors or bridge-initiated termination.
 
@@ -85,7 +85,7 @@ def run_snippet(code, output_buffer, request_id=None):
     # on the way out. When this snippet runs inside a busy task's cycle
     # callback, the outer task already owns ``_current_task_id``; if we
     # cleared it unconditionally on exit, the still-running task would
-    # silently lose ``interrupt_task`` support — the PFC interrupt
+    # silently lose ``interrupt_task`` support — the ITASCA interrupt
     # callback reads ``_current_task_id`` and an empty value means
     # "no task to interrupt".
     prior_task = None  # type: Optional[str]
@@ -131,7 +131,7 @@ def run_snippet(code, output_buffer, request_id=None):
         }
 
     except InterruptedError as e:
-        # L1 path - PFC interrupt callback raised at a cycle gap.
+        # L1 path - ITASCA interrupt callback raised at a cycle gap.
         return {
             "status": "interrupted",
             "message": "Execution interrupted: {}".format(str(e)),
@@ -140,7 +140,7 @@ def run_snippet(code, output_buffer, request_id=None):
         }
 
     except BaseException as e:
-        # PFC wraps callback exceptions in ValueError; recover the
+        # ITASCA wraps callback exceptions in ValueError; recover the
         # original InterruptedError so the caller sees the L1 path.
         if isinstance(e, ValueError):
             msg = str(e)
@@ -202,7 +202,7 @@ def run_snippet(code, output_buffer, request_id=None):
 
 def _serialize(result):
     # type: (Any) -> Any
-    """Convert PFC SDK objects into JSON-serialisable values."""
+    """Convert ITASCA SDK objects into JSON-serialisable values."""
     if result is None or isinstance(result, (str, int, float, bool)):
         return result
     if isinstance(result, (list, tuple)):

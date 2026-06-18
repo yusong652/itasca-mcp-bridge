@@ -4,10 +4,10 @@ Async exception injection for terminating stuck execute_code snippets.
 Used by the execute_code timeout handler: when a snippet blows its
 timeout we inject ``BridgeTimeout`` into the thread that is running
 user code so the code unwinds at the next Python bytecode edge,
-freeing PFC's main thread.
+freeing ITASCA's main thread.
 
 This is the L2 mechanism. L1 (``signals.request_interrupt`` + the
-PFC interrupt callback) handles cycle-gap cancellation - it pauses
+ITASCA interrupt callback) handles cycle-gap cancellation - it pauses
 ``it.cycle(...)``-style loops cleanly but cannot interrupt pure Python
 loops (``while True``, ``time.sleep``, busy arithmetic). L2 fills that
 gap.
@@ -15,7 +15,7 @@ gap.
 Safety: ``Dummy-N`` threads MUST NOT receive an injected exception -
 the exception would propagate back into ``boost::python`` and trigger
 ITASCA's C++ FATAL handler. MainThread is intentionally allowed: in
-PFC GUI mode the bridge task pump runs on MainThread via a Qt timer,
+the ITASCA product GUI mode the bridge task pump runs on MainThread via a Qt timer,
 so a stuck snippet is always sitting on MainThread's Python stack.
 The caller looks up the target thread via ``get_exec_thread``, which
 only returns a value while ``run_snippet`` is inside its try-block,
@@ -90,7 +90,7 @@ def fire_async_exception(thread_id, exc_type):
       caller something went wrong.
 
     The exception fires only at Python bytecode edges. Threads stuck
-    in C code (numpy, scipy, GIL-releasing I/O, PFC C-extension cycle)
+    in C code (numpy, scipy, GIL-releasing I/O, ITASCA C extension cycle)
     receive the exception queued but it does not fire until control
     returns to Python.
     """

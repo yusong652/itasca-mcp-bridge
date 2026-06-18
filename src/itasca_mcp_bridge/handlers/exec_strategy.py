@@ -6,7 +6,7 @@ Picks one of two paths based on bridge state:
 * ``"queue"``    - main thread is idle; submit straight to
                    ``MainThreadExecutor``
 * ``"callback"`` - main thread is busy with a tracked task; queue the
-                   snippet for the PFC cycle-gap callback to drain
+                   snippet for the ITASCA cycle-gap callback to drain
 
 Both paths are MainThread-bound. Actual snippet execution lives in
 ``execution.snippet.run_snippet``.
@@ -14,14 +14,14 @@ Both paths are MainThread-bound. Actual snippet execution lives in
 On timeout this module also drives ``_terminate_stuck_execution``,
 which combines:
 
-* L1 - ``request_interrupt`` (PFC interrupt callback raises at the next
+* L1 - ``request_interrupt`` (ITASCA interrupt callback raises at the next
   cycle boundary; pairs with ``set_current_task`` in ``run_snippet``).
 * L2 - ``PyThreadState_SetAsyncExc(BridgeTimeout)`` against the
   registered exec thread; aborts pure Python loops that never hit a
   cycle boundary (``while True``, ``time.sleep``, ...).
 
 L2 only fires for threads ``is_safe_to_async_raise`` accepts. ``Dummy-N``
-threads (PFC ``boost::python`` callbacks) are refused because injecting
+threads (ITASCA ``boost::python`` callbacks) are refused because injecting
 into them would escape into C++ and trigger ITASCA's FATAL handler.
 
 Python 3.6 compatible implementation.
@@ -70,7 +70,7 @@ async def _terminate_stuck_execution(request_id, future):
     * ``reason``: machine-readable reason when ``method == "flag_only"``.
     * ``result``: the future's result dict when resolved, else None.
     """
-    # Always fire the flag first - cheap, lets PFC's interrupt callback
+    # Always fire the flag first - cheap, lets ITASCA's interrupt callback
     # raise InterruptedError at the next cycle boundary even if L2 is
     # refused or never reaches a bytecode edge.
     request_interrupt(request_id)
@@ -90,7 +90,7 @@ async def _terminate_stuck_execution(request_id, future):
     safe, reason = is_safe_to_async_raise(tid)
     if not safe:
         # Can't safely inject (Dummy-N nested case, or thread gone).
-        # Fall back to flag-only cancellation; PFC's cycle callback may
+        # Fall back to flag-only cancellation; ITASCA's cycle callback may
         # still pick up the flag at the next cycle boundary.
         if future.done():
             try:
@@ -127,7 +127,7 @@ def _timeout_response(timeout_ms, termination):
     Build the inner response payload for an execute_code that timed out.
 
     * ``resolved=True`` -> status ``"terminated"``: bridge is free, but
-      PFC state may be partially modified by the aborted code.
+      ITASCA state may be partially modified by the aborted code.
     * ``resolved=False`` -> status ``"timeout"``: cancellation couldn't
       complete; worker may still be blocked.
     """
@@ -148,7 +148,7 @@ def _timeout_response(timeout_ms, termination):
     if resolved:
         message = (
             "Execution timed out after {}ms and was aborted. "
-            "PFC state may be partially modified by the aborted code."
+            "ITASCA state may be partially modified by the aborted code."
         ).format(timeout_ms)
         return {
             "status": "terminated",

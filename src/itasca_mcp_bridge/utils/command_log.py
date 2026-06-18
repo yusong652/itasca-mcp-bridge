@@ -1,17 +1,17 @@
 """
-Capture PFC console output from itasca.command() calls.
+Capture ITASCA console output from itasca.command() calls.
 
-The Python SDK's itasca.command() returns nothing — PFC sends command output
+The Python SDK's itasca.command() returns nothing — ITASCA sends command output
 (tables, list dumps, summaries) to its own console pane, invisible to Python.
 This module monkey-patches itasca.command within a scoped block so each call
-is wrapped with PFC's `program log on/off` commands. Captured output is
+is wrapped with ITASCA's `program log on/off` commands. Captured output is
 written to a caller-supplied sink (typically the active sys.stdout, which
 already routes through TeeBuffer to the task's FileBuffer), preserving exact
 interleaving with Python print() statements.
 
 Why per-call (vs. one log session per snippet):
 
-PFC opens the log file with exclusive write share mode while logging is on.
+ITASCA opens the log file with exclusive write share mode while logging is on.
 On Windows, Python cannot read the file until `program log off` releases the
 lock. Per-call on/off is the only way to read incrementally; the per-pair
 overhead measured ~1.4–1.8 ms (negligible for typical snippet sizes).
@@ -43,17 +43,17 @@ def _strip_footer(content):
 def capture_pfc_console(stdout_sink, log_dir):
     # type: (object, str) -> object
     """
-    Within this block, monkey-patch itasca.command() so each call's PFC
+    Within this block, monkey-patch itasca.command() so each call's ITASCA
     console output is captured and written to `stdout_sink` immediately
     after the call returns.
 
     Args:
         stdout_sink: file-like object with .write(str) — typically the active
                      sys.stdout (TeeBuffer → FileBuffer in script execution).
-        log_dir: directory for the temporary PFC log file (created if missing).
+        log_dir: directory for the temporary ITASCA log file (created if missing).
 
     Effect on per-command behavior:
-        Each user `itasca.command(cmd)` becomes 3 PFC commands:
+        Each user `itasca.command(cmd)` becomes 3 ITASCA commands:
             program log on truncate show-message off
             <cmd>
             program log off
@@ -66,11 +66,11 @@ def capture_pfc_console(stdout_sink, log_dir):
     """
     import itasca
 
-    # Resolve to an absolute path: the PFC command interpreter resolves
+    # Resolve to an absolute path: the ITASCA command interpreter resolves
     # relative file paths against its OWN working directory, which is not
     # guaranteed to equal Python's os.getcwd() (e.g. headless Linux console
-    # leaves Python at the launch dir but PFC at /tmp). A relative log_path
-    # would then be written by PFC and read back by Python at two different
+    # leaves Python at the launch dir but ITASCA at /tmp). A relative log_path
+    # would then be written by ITASCA and read back by Python at two different
     # locations, yielding empty captures or a hard write error.
     log_dir = os.path.abspath(log_dir) if log_dir else log_dir
 
