@@ -8,6 +8,7 @@ from .file_buffer import FileBuffer, TeeBuffer
 from .response import TaskDataBuilder, build_response
 from .command_splitter import preprocess_script
 from .command_log import capture_pfc_console
+from .safe_logging import GapFreeFileHandler, GapFreeStreamHandler
 
 __all__ = [
     'path_utils',
@@ -18,4 +19,6 @@ __all__ = [
     'build_response',
     'preprocess_script',
     'capture_pfc_console',
+    'GapFreeFileHandler',
+    'GapFreeStreamHandler',
 ]
