@@ -1,7 +1,7 @@
 """
-PFC Script Execution Engine.
+Script Execution Engine.
 
-Core execution mechanisms for running PFC scripts in the main thread.
+Core execution mechanisms for running ITASCA scripts in the main thread.
 """
 
 from .main_thread import MainThreadExecutor

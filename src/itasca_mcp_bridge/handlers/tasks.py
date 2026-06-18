@@ -1,7 +1,7 @@
 """
 Task-related message handlers.
 
-Handles PFC task execution and task status management operations.
+Handles ITASCA task execution and task status management operations.
 """
 
 from typing import Any, Dict
@@ -14,8 +14,6 @@ async def handle_execute_task(ctx, data):
     # type: (ServerContext, Dict[str, Any]) -> Dict[str, Any]
     """
     Handle execute_task message - execute Python script from file path.
-
-    The legacy ``pfc_task`` message type is an accepted alias and routes here.
 
     Args:
         ctx: Server context with dependencies
@@ -179,7 +177,7 @@ async def handle_interrupt_task(ctx, data):
             "data": {"task_id": task_id, "status": task_status, "interrupt_requested": False}
         }
 
-    # Request interrupt (will be checked by PFC callback)
+    # Request interrupt (will be checked by ITASCA callback)
     success = request_interrupt(task_id)
     if not success:
         return {

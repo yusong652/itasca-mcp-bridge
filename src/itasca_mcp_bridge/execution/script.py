@@ -1,7 +1,7 @@
 """
-PFC Script Executor - Executes Python SDK scripts with direct API access.
+Script Executor - Executes Python SDK scripts with direct API access.
 
-This module provides script execution functionality using PFC Python SDK via
+This module provides script execution functionality using the ITASCA Python SDK via
 main thread queue, enabling queries and operations that return values.
 
 Python 3.6 compatible implementation.
@@ -32,7 +32,7 @@ logger = logging.getLogger("itasca-mcp-bridge")
 
 
 class ScriptRunner:
-    """Run Python scripts via PFC main thread queue."""
+    """Run Python scripts via ITASCA main thread queue."""
 
     def __init__(self, main_executor, task_manager):
         # type: (MainThreadExecutor, Any) -> None
@@ -52,7 +52,7 @@ class ScriptRunner:
         Execute script in main thread (called via queue).
 
         Captures stdout during execution for progress tracking using shared buffer.
-        Supports interruption via registered PFC callback.
+        Supports interruption via registered ITASCA callback.
 
         Args:
             script_path: Path to script (for error messages)
@@ -103,7 +103,7 @@ class ScriptRunner:
             # to prevent GIL being held for the entire batch.
             script_content = preprocess_script(script_content)
 
-            # Capture PFC console output (table dumps, list output) from
+            # Capture ITASCA console output (table dumps, list output) from
             # itasca.command calls, interleaved with Python prints in
             # execution order via the active sys.stdout (TeeBuffer).
             cmdlog_dir = path_utils.logs_dir()
@@ -159,11 +159,11 @@ class ScriptRunner:
             output_text = output_buffer.getvalue()
 
             # Check if this is a wrapped InterruptedError from our callback
-            # PFC wraps callback exceptions in ValueError
+            # ITASCA wraps callback exceptions in ValueError
             if isinstance(e, ValueError):
                 error_str = str(e)
                 if "InterruptedError" in error_str and "_pfc_interrupt_check" in error_str:
-                    logger.info("Script interrupted (via PFC callback): {}".format(script_path))
+                    logger.info("Script interrupted (via ITASCA callback): {}".format(script_path))
                     return {
                         "status": "interrupted",
                         "message": "Script interrupted by user",
@@ -238,7 +238,7 @@ class ScriptRunner:
 
         Args:
             script_path: Absolute path to Python script file
-            description: Task description from PFC agent (LLM-provided)
+            description: Task description from the agent (LLM-provided)
             task_id: Required client-generated task ID (6-char hex)
 
         Returns:
@@ -317,7 +317,7 @@ class ScriptRunner:
 
     def _serialize_result(self, result: Any) -> Any:
         """
-        Convert PFC objects to JSON-serializable format.
+        Convert ITASCA SDK objects to JSON-serializable format.
 
         Args:
             result: Any Python object returned from script execution
@@ -334,5 +334,5 @@ class ScriptRunner:
         elif isinstance(result, dict):
             return {k: self._serialize_result(v) for k, v in result.items()}
         else:
-            # For complex PFC objects, return string representation
+            # For complex ITASCA SDK objects, return string representation
             return str(result)

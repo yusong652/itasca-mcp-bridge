@@ -155,7 +155,7 @@ def start(
 
     formatter = logging.Formatter('[%(asctime)s] %(levelname)s - %(message)s')
     # Full INFO trail in bridge.log; stdout only surfaces warnings/errors so the
-    # PFC IPython console stays clean for non-developer users. Bookkeeping like
+    # ITASCA IPython console stays clean for non-developer users. Bookkeeping like
     # callback registration and TaskManager init goes to file only.
     #
     # Gap-free handlers: L2 termination async-raises BridgeTimeout into the

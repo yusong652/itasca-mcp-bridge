@@ -1,8 +1,8 @@
 """
 Command Splitter - Preprocess scripts to split multi-line itasca.command() calls.
 
-When itasca.command() receives a multi-line string containing multiple PFC
-commands, the PFC C extension holds the GIL for the entire batch, blocking
+When itasca.command() receives a multi-line string containing multiple ITASCA
+commands, the ITASCA C extension holds the GIL for the entire batch, blocking
 all other Python threads (including the Bridge WebSocket event loop).
 
 This module transforms such calls into individual itasca.command() calls,
@@ -22,19 +22,19 @@ logger = logging.getLogger("itasca-mcp-bridge")
 
 def split_pfc_commands(multiline_str):
     # type: (str) -> List[str]
-    """Split a multi-line PFC command string into individual commands.
+    """Split a multi-line ITASCA command string into individual commands.
 
     Handles:
     - Newline-separated commands
-    - PFC line continuation with '...' at end of line
-    - PFC comments starting with ';'
+    - ITASCA line continuation with '...' at end of line
+    - ITASCA comments starting with ';'
     - Empty/whitespace-only lines
 
     Args:
-        multiline_str: Multi-line PFC command string
+        multiline_str: Multi-line ITASCA command string
 
     Returns:
-        List of individual PFC command strings
+        List of individual ITASCA command strings
     """
     lines = multiline_str.split("\n")
     commands = []
@@ -47,7 +47,7 @@ def split_pfc_commands(multiline_str):
         if not stripped or stripped.startswith(";"):
             continue
 
-        # Check for PFC line continuation (... at end)
+        # Check for ITASCA line continuation (... at end)
         if stripped.endswith("..."):
             # Remove the '...' and accumulate
             current.append(stripped[:-3].rstrip())
@@ -157,7 +157,7 @@ def _find_multiline_command_calls(tree, module_aliases, bare_command_aliases):
         value = _get_string_value(node.args[0])
         if value is None:
             continue
-        # Only process if it contains multiple PFC commands (newlines)
+        # Only process if it contains multiple ITASCA commands (newlines)
         if "\n" not in value:
             continue
         # Check it actually has >1 command after splitting
@@ -201,7 +201,7 @@ def _find_unrecognized_multiline_command_calls(tree, module_aliases):
         value = _get_string_value(node.args[0])
         if value is None or "\n" not in value:
             continue
-        # Require >1 actual PFC command after splitting — single-line block
+        # Require >1 actual ITASCA command after splitting — single-line block
         # in triple-quotes isn't risky.
         if len(split_pfc_commands(value)) <= 1:
             continue
@@ -278,7 +278,7 @@ def _build_replacement(call_name, commands, indent):
 
     Args:
         call_name: 'itasca.command' or 'command'
-        commands: List of individual PFC command strings
+        commands: List of individual ITASCA command strings
         indent: Whitespace indentation to preserve
 
     Returns:
@@ -338,7 +338,7 @@ def preprocess_script(script_content):
         # Find full extent of the call in source
         line_start, line_end = _find_call_range(source_lines, call_node)
 
-        # Split PFC commands and build replacement
+        # Split ITASCA commands and build replacement
         commands = split_pfc_commands(cmd_string)
         replacement = _build_replacement(call_name, commands, indent)
 

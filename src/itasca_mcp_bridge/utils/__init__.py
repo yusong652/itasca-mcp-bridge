@@ -1,5 +1,5 @@
 """
-Utility modules for PFC server.
+Utility modules for the bridge.
 """
 
 from . import path_utils

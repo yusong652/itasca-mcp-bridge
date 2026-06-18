@@ -1,5 +1,5 @@
 """
-Script Task - Lifecycle management for long-running PFC script execution.
+Script Task - Lifecycle management for long-running ITASCA script execution.
 
 This module provides the ScriptTask class that tracks task state,
 captures real-time output, and generates status responses.
@@ -362,7 +362,7 @@ class ScriptTask:
     @staticmethod
     def _serialize_result(result):
         # type: (Any) -> Any
-        """Convert PFC objects to JSON-serializable format."""
+        """Convert ITASCA SDK objects to JSON-serializable format."""
         if result is None:
             return None
         elif isinstance(result, (str, int, float, bool)):

@@ -1,19 +1,19 @@
 """
 Interrupt Manager - Global interrupt callback registration and task interrupt management.
 
-This module provides a mechanism to interrupt long-running PFC simulations
+This module provides a mechanism to interrupt long-running ITASCA simulations
 via itasca.set_callback(). The callback checks interrupt flags each cycle
 and raises InterruptedError to stop execution.
 
 Key constraints:
-- PFC callback looks up function by name in __main__ namespace
-- Functions defined in exec() context are not visible to PFC
+- ITASCA callback looks up function by name in __main__ namespace
+- Functions defined in exec() context are not visible to ITASCA
 - Must register global function in __main__ before use
 
 Architecture:
 - WebSocket thread: calls request_interrupt(task_id) when user cancels
 - Main thread: script execution with set_current_task()/clear_current_task()
-- PFC callback: _pfc_interrupt_check() checks flag each cycle
+- ITASCA callback: _pfc_interrupt_check() checks flag each cycle
 
 Python 3.6 compatible implementation.
 """
@@ -65,7 +65,7 @@ def check_interrupt(task_id):
     """
     Check if interrupt requested for a task.
 
-    Called from PFC callback during cycle execution.
+    Called from ITASCA callback during cycle execution.
     Must be fast - runs every cycle during simulation.
 
     Args:
@@ -140,7 +140,7 @@ def peek_current_task():
     when an execute_code snippet runs *inside* a running task's
     cycle-callback gap, we must not clobber the outer task's
     ``_current_task_id`` on the way out — that would silently disable
-    ``interrupt_task`` for the still-running task (its PFC callback
+    ``interrupt_task`` for the still-running task (its ITASCA callback
     checks ``_current_task_id`` and a cleared value means "no task to
     interrupt").
     """
@@ -194,16 +194,16 @@ def get_exec_thread(request_id):
 
 
 # =============================================================================
-# Global Interrupt Check Function (Registered with PFC)
+# Global Interrupt Check Function (Registered with ITASCA)
 # =============================================================================
 
 def _pfc_interrupt_check():
     # type: () -> None
     """
-    Global function called by PFC each cycle.
+    Global function called by ITASCA each cycle.
 
     Checks if current task has interrupt request and raises InterruptedError.
-    This function is injected into __main__ namespace and registered with PFC.
+    This function is injected into __main__ namespace and registered with ITASCA.
 
     Note:
         Must be fast - runs every cycle during simulation.
@@ -219,15 +219,15 @@ def _pfc_interrupt_check():
 
 
 # =============================================================================
-# PFC Callback Registration
+# ITASCA Callback Registration
 # =============================================================================
 
 def _re_register_callback(itasca_module, position=INTERRUPT_CALLBACK_POSITION):
     # type: (Any, float) -> None
     """
-    Re-register interrupt callback with PFC.
+    Re-register interrupt callback with ITASCA.
 
-    Called after model new/restore commands which clear PFC's callback registry.
+    Called after model new/restore commands which clear ITASCA's callback registry.
     Also re-registers executor callback if it was registered.
     """
     import __main__
@@ -246,14 +246,14 @@ def _re_register_callback(itasca_module, position=INTERRUPT_CALLBACK_POSITION):
         pass  # cycle_executor not available
 
 
-# Commands that clear PFC's callback registry
+# Commands that clear ITASCA's callback registry
 _MODEL_RESET_COMMANDS = ("model new", "model restore")
 
 
 def register_interrupt_callback(itasca_module, position=INTERRUPT_CALLBACK_POSITION):
     # type: (Any, float) -> bool
     """
-    Register interrupt callback with PFC.
+    Register interrupt callback with ITASCA.
 
     Must be called once during server startup. This function:
     1. Injects _pfc_interrupt_check into __main__ namespace
@@ -261,7 +261,7 @@ def register_interrupt_callback(itasca_module, position=INTERRUPT_CALLBACK_POSIT
     3. Wraps itasca.command to auto-re-register after model new/restore
 
     Args:
-        itasca_module: The itasca module (imported in PFC environment)
+        itasca_module: The itasca module (imported in ITASCA environment)
         position: Cycle point for set_callback
             (default: INTERRUPT_CALLBACK_POSITION; see signals.positions).
             - Negative values: before cycle starts
@@ -274,11 +274,11 @@ def register_interrupt_callback(itasca_module, position=INTERRUPT_CALLBACK_POSIT
         bool: True if registered successfully
     """
     try:
-        # Inject function into __main__ namespace (required for PFC lookup)
+        # Inject function into __main__ namespace (required for ITASCA lookup)
         import __main__
         __main__._pfc_interrupt_check = _pfc_interrupt_check  # type: ignore[attr-defined]
 
-        # Register with PFC (remove-before-register: idempotent across versions;
+        # Register with ITASCA (remove-before-register: idempotent across versions;
         # PFC 6.0 set_callback is strict and model restore does not clear the
         # registry, so a plain set_callback would collide. See register_cycle_callback.)
         register_cycle_callback(itasca_module, "_pfc_interrupt_check", position)
@@ -286,10 +286,10 @@ def register_interrupt_callback(itasca_module, position=INTERRUPT_CALLBACK_POSIT
         # Wrap itasca.command to:
         #   1. Keep _pfc_interrupt_check visible in the current __main__ (some
         #      contexts like IPython %run temporarily replace sys.modules['__main__'],
-        #      which hides the attribute injected at startup and makes PFC's
+        #      which hides the attribute injected at startup and makes ITASCA's
         #      callback lookup fail with "function is not defined").
         #   2. Auto-re-register callback after model new/restore (those commands
-        #      clear PFC's internal callback registry).
+        #      clear ITASCA's internal callback registry).
         _original_command = itasca_module.command
         import sys as _sys
 

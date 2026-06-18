@@ -1,5 +1,5 @@
 """
-PFC Server Signals and Callbacks.
+Server Signals and Callbacks.
 
 Inter-process communication mechanisms:
 - Interrupt signals for task cancellation

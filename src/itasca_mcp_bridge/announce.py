@@ -9,7 +9,7 @@ banner hook prints every entry in the `(old version, new version]` jump.
 Maintaining `ANNOUNCEMENTS`:
 - Add a key only for releases with user-visible improvements; silent
   fixes don't need one.
-- Keep notes to one or two short lines each -- this prints in the PFC
+- Keep notes to one or two short lines each -- this prints in the ITASCA
   console on someone else's screen.
 - Entries for old versions may be pruned; they only ever display for
   users jumping from a version older than them.

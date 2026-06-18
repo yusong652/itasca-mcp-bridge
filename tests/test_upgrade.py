@@ -103,19 +103,6 @@ class TestCheckLatestVersion:
         monkeypatch.setattr(upgrade, "_latest_from_simple_index", lambda url: "0.3.0")
         assert upgrade.check_latest_version() == "0.3.0"
 
-    def test_legacy_override_honoured(self, monkeypatch):
-        monkeypatch.delenv(upgrade.ENV_INDEX_URL, raising=False)
-        monkeypatch.setenv(upgrade.ENV_INDEX_URL_LEGACY, "https://corp/simple/")
-        seen = []
-
-        def fake_simple(index_url):
-            seen.append(index_url)
-            return "0.3.0"
-
-        monkeypatch.setattr(upgrade, "_latest_from_simple_index", fake_simple)
-        assert upgrade.check_latest_version() == "0.3.0"
-        assert seen == ["https://corp/simple/"]
-
 
 class TestMaybeUpgrade:
     def test_index_unreachable_skips(self, monkeypatch):
@@ -152,7 +139,6 @@ class TestMaybeUpgrade:
 class TestInstallLatest:
     def test_tries_mirror_after_primary_failure(self, monkeypatch):
         monkeypatch.delenv(upgrade.ENV_INDEX_URL, raising=False)
-        monkeypatch.delenv(upgrade.ENV_INDEX_URL_LEGACY, raising=False)
         calls = []
 
         def fake_run_pip(args):

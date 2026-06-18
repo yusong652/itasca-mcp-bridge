@@ -30,7 +30,7 @@ ITASCA 的 Python SDK 只能在主线程使用，因此 bridge 让仿真留在�
 flowchart TD
     C[MCP 客户端] -->|WebSocket| S[asyncio 服务<br/>后台线程]
     S -->|submit → Future| Q[MainThreadExecutor<br/>队列]
-    Q -->|Qt 定时器 / 阻塞轮询| M[PFC 主线程<br/>itasca SDK + 求解器]
+    Q -->|Qt 定时器 / 阻塞轮询| M[产品主线程<br/>itasca SDK + 求解器]
     M -.->|每周期回调| CB[中断检查<br/>+ 片段执行器]
     CB -.-> M
 ```
@@ -61,8 +61,6 @@ bridge 是 wire 契约的唯一真源——pfc-mcp、flac-mcp 等 MCP 服务端�
 | `execute_code` | 在运行中任务的 `__main__` 里执行片段（同步 REPL） | `code`、`timeout_ms` |
 | `get_working_directory` | 返回产品进程的工作目录 | — |
 | `ping` | 存活检查 | — |
-
-> `pfc_task` 仍作为 `execute_task` 的废弃别名被接受，过渡期内老客户端可继续工作。
 
 ## 快速开始
 
