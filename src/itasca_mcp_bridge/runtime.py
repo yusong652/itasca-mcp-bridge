@@ -157,9 +157,16 @@ def start(
     # Full INFO trail in bridge.log; stdout only surfaces warnings/errors so the
     # PFC IPython console stays clean for non-developer users. Bookkeeping like
     # callback registration and TaskManager init goes to file only.
-    file_handler = logging.FileHandler(log_file, mode='w', encoding='utf-8')
+    #
+    # Gap-free handlers: L2 termination async-raises BridgeTimeout into the
+    # snippet thread, which may be mid-handle() while logging. The stdlib
+    # acquire/try/finally form (Python <= 3.10) can leak the handler lock on
+    # that race and freeze the bridge; these subclasses use the gap-free
+    # `with self.lock` form. See utils/safe_logging.py.
+    from .utils.safe_logging import GapFreeFileHandler, GapFreeStreamHandler
+    file_handler = GapFreeFileHandler(log_file, mode='w', encoding='utf-8')
     file_handler.setFormatter(formatter)
-    stream_handler = logging.StreamHandler(sys.stdout)
+    stream_handler = GapFreeStreamHandler(sys.stdout)
     stream_handler.setFormatter(formatter)
     stream_handler.setLevel(logging.WARNING)
     root_logger.addHandler(file_handler)
