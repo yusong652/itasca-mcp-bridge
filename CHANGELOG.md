@@ -4,6 +4,33 @@ All notable changes to `itasca-mcp-bridge` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-06-18
+
+### Fixed
+- Close the L2 logging-lock deadlock. The timeout terminator async-raises
+  `BridgeTimeout` into the snippet thread via `PyThreadState_SetAsyncExc`,
+  which fires at an arbitrary bytecode edge. CPython's stdlib
+  `logging.Handler.handle` (Python <= 3.10, which every PFC ships) guards
+  `emit` with `acquire()/try/finally`, leaving a bytecode gap between the
+  lock acquisition and the `finally` registration; an injection landing
+  there orphaned the handler `RLock` and froze the background WebSocket
+  thread until the product was restarted. The root file/stream handlers now
+  use the gap-free `with self.lock` form — the same fix CPython itself
+  shipped in 3.11. Measured on PFC3D 9 / Python 3.10.5: the old form leaked
+  the lock in 21/120 injections, the fix in 0/120.
+
+### Removed
+- The deprecated `pfc_task` message-type alias (use `execute_task`) and the
+  `PFC_MCP_PIP_INDEX_URL` legacy environment variable (use
+  `ITASCA_MCP_PIP_INDEX_URL`). The frozen `pfc-mcp-bridge` package was the
+  only consumer of this back-compatibility surface.
+
+### Changed
+- Generalized residual PFC-specific wording in comments, docstrings, and
+  user-facing messages to ITASCA/product, reflecting the bridge's
+  product-neutral scope. Version-specific facts and PFC-named identifiers
+  are unchanged.
+
 ## [0.2.1] - 2026-06-11
 
 ### Added

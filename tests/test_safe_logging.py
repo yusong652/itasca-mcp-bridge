@@ -1,8 +1,7 @@
 """Tests for utils.safe_logging — the gap-free logging handlers that
 close the L2 logging-lock deadlock.
 
-Background (see utils/safe_logging.py and
-pfc-mcp/docs/development/deadlock-analysis.md section 1): when the L2
+Background (see utils/safe_logging.py): when the L2
 timeout handler async-raises ``BridgeTimeout`` into a thread that is
 inside ``logging.Handler.handle``, the stdlib acquire/try/finally form
 (Python <= 3.10) can unwind in the bytecode gap before ``finally`` is

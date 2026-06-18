@@ -30,9 +30,7 @@ the Python versions PFC actually ships (3.6 for PFC 6/7, 3.10 for PFC 9).
 
 Measured on the live PFC3D 9 / Python 3.10.5 runtime: the stdlib
 acquire/try/finally form leaked the lock in ~1/3 of injections that
-landed inside ``handle``; the ``with self.lock`` form leaked 0/150. See
-``pfc-mcp/docs/development/deadlock-analysis.md`` section 1 for the full
-analysis.
+landed inside ``handle``; the ``with self.lock`` form leaked 0/150.
 
 Python 3.6 compatible implementation.
 """
