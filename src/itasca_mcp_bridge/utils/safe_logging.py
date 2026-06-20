@@ -19,7 +19,7 @@ held) and ``SETUP_FINALLY`` registering the ``finally``. If the injected
 ``BridgeTimeout`` fires on one of those edges, the stack unwinds with no
 ``finally`` registered and the handler's ``RLock`` is leaked -- held
 forever by a thread that has already returned to the pump loop. The
-background WebSocket thread then blocks the first time it logs anything,
+background server thread then blocks the first time it logs anything,
 freezing the whole bridge until the product is restarted.
 
 CPython closed this in 3.11 by switching ``handle`` to ``with

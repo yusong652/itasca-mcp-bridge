@@ -5,11 +5,11 @@ build-backend = "hatchling.build"
 [project]
 name = "itasca-mcp-bridge"
 dynamic = ["version"]
-description = "WebSocket bridge for ITASCA codes (PFC, FLAC3D, ...) - runs inside the product GUI to enable remote simulation control"
+description = "HTTP bridge for ITASCA codes (PFC, FLAC3D, ...) - runs inside the product GUI to enable remote simulation control"
 requires-python = ">=3.6"
 license = { text = "MIT" }
 authors = [{ name= "Yusong Han", email = "yusong.han.652@gmail.com" }, { name = "Nagisa Toyoura", email = "nagisa.toyoura@gmail.com" }]
-keywords = ["itasca", "itasca-software", "pfc", "flac", "flac3d", "3dec", "mcp", "simulation", "websocket", "bridge"]
+keywords = ["itasca", "itasca-software", "pfc", "flac", "flac3d", "3dec", "mcp", "simulation", "http", "bridge"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Topic :: Scientific/Engineering",
@@ -20,10 +20,9 @@ classifiers = [
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.10",
 ]
-dependencies = [
-    "websockets==9.1; python_version < '3.10'",
-    "websockets==16.0; python_version >= '3.10'",
-]
+# No runtime dependencies: the bridge speaks stdlib HTTP + SSE (http.server),
+# so it installs cleanly into any ITASCA embedded Python (3.6+) with no pins.
+dependencies = []
 readme = "README.md"
 
 [project.scripts]

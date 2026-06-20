@@ -19,7 +19,7 @@ from ..utils.response import _truncate_output
 logger = logging.getLogger("itasca-mcp-bridge")
 
 
-async def handle_execute_code(ctx, data):
+def handle_execute_code(ctx, data):
     # type: (ServerContext, Dict[str, Any]) -> Dict[str, Any]
     """Handle ``execute_code`` message."""
     request_id = data.get("request_id", "unknown")
@@ -32,7 +32,7 @@ async def handle_execute_code(ctx, data):
     timeout_s = timeout_ms / 1000.0
 
     try:
-        result, path = await execute_snippet(ctx, code, request_id, timeout_s)
+        result, path = execute_snippet(ctx, code, request_id, timeout_s)
     except Exception as e:
         logger.error("Code execution failed: {}".format(e))
         return {

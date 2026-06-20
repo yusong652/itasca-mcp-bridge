@@ -279,7 +279,7 @@ def _ensure_user_site_on_path():
 
 
 def reload_bridge():
-    """Drop the loaded bridge (and websockets) modules and re-import fresh.
+    """Drop the loaded bridge modules and re-import fresh.
 
     Called after pip replaced the package on disk so the new code is what
     actually runs. Safe at this point because start() performs the upgrade
@@ -289,8 +289,6 @@ def reload_bridge():
     _ensure_user_site_on_path()
     for name in list(sys.modules):
         if name == MODULE_NAME or name.startswith(MODULE_NAME + "."):
-            del sys.modules[name]
-        elif name == "websockets" or name.startswith("websockets."):
             del sys.modules[name]
     importlib.invalidate_caches()
     return importlib.import_module(MODULE_NAME)

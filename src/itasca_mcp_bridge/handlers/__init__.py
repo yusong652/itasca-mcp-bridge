@@ -1,8 +1,10 @@
 """
-WebSocket Server Message Handlers.
+HTTP bridge message handlers.
 
-This module provides modular message handlers for the ITASCA WebSocket server.
-Each handler module focuses on a specific domain of functionality.
+This module provides modular message handlers for the ITASCA HTTP bridge.
+Each handler module focuses on a specific domain of functionality. Handlers
+are plain synchronous callables ``(ctx, data) -> dict``; the transport
+(server.py) serves each one on its own request thread.
 """
 
 from .context import ServerContext
@@ -13,8 +15,6 @@ from .tasks import (
     handle_interrupt_task,
 )
 from .execute_code import handle_execute_code
-from .workspace import handle_get_working_directory
-from .utilities import handle_ping
 
 __all__ = [
     # Context
@@ -26,8 +26,4 @@ __all__ = [
     "handle_interrupt_task",
     # Execute code
     "handle_execute_code",
-    # Workspace
-    "handle_get_working_directory",
-    # Utilities
-    "handle_ping",
 ]

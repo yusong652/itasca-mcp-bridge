@@ -1,7 +1,7 @@
-"""Itasca MCP Bridge - WebSocket bridge for ITASCA codes.
+"""Itasca MCP Bridge - HTTP bridge for ITASCA codes.
 
 Runs inside an ITASCA product GUI (PFC, FLAC3D, ...) Python environment
-and exposes the product SDK as a remote WebSocket API for MCP clients
+and exposes the product SDK as a remote HTTP + SSE API for MCP clients
 and other tools.
 
 Usage (in the product GUI Python console):
@@ -32,27 +32,18 @@ from .runtime import (  # noqa: F401  (re-exported for compatibility)
 def start(
     host="localhost",
     port=9001,
-    ping_interval=120,
-    ping_timeout=300,
-    timer_interval_ms=DEFAULT_TIMER_INTERVAL_MS,
-    max_tasks_per_tick=DEFAULT_MAX_TASKS_PER_TICK,
     mode="auto",
     auto_upgrade=True,
 ):
     """Start the Itasca MCP Bridge server.
 
     Optionally self-upgrades to the latest published release first, then
-    starts a WebSocket server in a background thread and the main-thread
+    starts an HTTP + SSE server in a background thread and the main-thread
     task pump.
 
     Args:
         host: Server host address.
         port: Server port number.
-        ping_interval: Seconds between WebSocket ping frames.
-        ping_timeout: Seconds to wait for pong before disconnect.
-        timer_interval_ms: Timer/poll interval in milliseconds.
-        max_tasks_per_tick: Max queued tasks handled per tick.
-            Set <=0 to process all pending tasks each tick.
         mode: Task pump mode - "auto" (try Qt, fall back to blocking),
             "gui" (Qt only), or "console" (blocking only).
         auto_upgrade: Check PyPI for a newer bridge release and install it
@@ -84,10 +75,6 @@ def start(
                     return fresh.start(
                         host=host,
                         port=port,
-                        ping_interval=ping_interval,
-                        ping_timeout=ping_timeout,
-                        timer_interval_ms=timer_interval_ms,
-                        max_tasks_per_tick=max_tasks_per_tick,
                         mode=mode,
                         auto_upgrade=False,
                     )
@@ -97,9 +84,5 @@ def start(
     return runtime.start(
         host=host,
         port=port,
-        ping_interval=ping_interval,
-        ping_timeout=ping_timeout,
-        timer_interval_ms=timer_interval_ms,
-        max_tasks_per_tick=max_tasks_per_tick,
         mode=mode,
     )

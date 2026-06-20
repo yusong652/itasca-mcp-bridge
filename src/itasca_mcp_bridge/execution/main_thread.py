@@ -2,7 +2,7 @@
 Main Thread Executor - Thread-safe task queue for main thread execution.
 
 This module provides task queue mechanism to execute ITASCA commands in the main thread
-while WebSocket server runs in background thread.
+while the HTTP server runs in background thread.
 
 Python 3.6 compatible implementation.
 """
@@ -21,7 +21,7 @@ class MainThreadExecutor:
     """
     Execute tasks in ITASCA IPython main thread via queue.
 
-    WebSocket server (background thread) submits tasks via submit(),
+    HTTP server (background thread) submits tasks via submit(),
     IPython main thread processes tasks via process_tasks().
     """
 
@@ -46,12 +46,12 @@ class MainThreadExecutor:
             **kwargs: Keyword arguments for function
 
         Returns:
-            Future: Future object to await result
+            Future: Future object to block on for the result
 
         Example:
-            # From background thread
+            # From a request (HTTP handler) thread
             future = executor.submit(itasca.command, "ball generate number 100")
-            result = await loop.run_in_executor(None, future.result, timeout)
+            result = future.result(timeout)
         """
         future = Future()
         self.task_queue.put((func, args, kwargs, future))

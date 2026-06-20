@@ -27,7 +27,6 @@ into them would escape into C++ and trigger ITASCA's FATAL handler.
 Python 3.6 compatible implementation.
 """
 
-import asyncio
 import concurrent.futures
 import logging
 from io import StringIO
@@ -51,7 +50,7 @@ logger = logging.getLogger("itasca-mcp-bridge")
 _TERMINATION_GRACE_S = 0.5
 
 
-async def _terminate_stuck_execution(request_id, future):
+def _terminate_stuck_execution(request_id, future):
     # type: (str, concurrent.futures.Future) -> Dict[str, Any]
     """
     Best-effort cancellation of a snippet submission that blew its timeout.
@@ -113,11 +112,9 @@ async def _terminate_stuck_execution(request_id, future):
     fire_async_exception(tid, BridgeTimeout)
 
     try:
-        result = await asyncio.wait_for(
-            asyncio.wrap_future(future), timeout=_TERMINATION_GRACE_S
-        )
+        result = future.result(timeout=_TERMINATION_GRACE_S)
         return {"resolved": True, "method": "async_exc", "result": result}
-    except (asyncio.TimeoutError, concurrent.futures.TimeoutError):
+    except concurrent.futures.TimeoutError:
         return {"resolved": False, "method": "stuck_in_c", "result": None}
 
 
@@ -183,7 +180,7 @@ def _timeout_response(timeout_ms, termination):
     }
 
 
-async def execute_snippet(ctx, code, request_id, timeout_s):
+def execute_snippet(ctx, code, request_id, timeout_s):
     # type: (ServerContext, str, str, float) -> Tuple[Dict[str, Any], str]
     """
     Execute snippet with bridge-side timeout + termination.
@@ -214,14 +211,14 @@ async def execute_snippet(ctx, code, request_id, timeout_s):
         )
         path = "queue"
 
-    loop = asyncio.get_event_loop()
+    # Block this per-request HTTP thread until the snippet settles or the
+    # timeout fires. ThreadingMixIn gives each request its own thread, so a
+    # blocking wait here never stalls concurrent status queries or the SSE
+    # stream. The small server-side buffer mirrors the old asyncio wait.
     try:
-        result = await asyncio.wait_for(
-            loop.run_in_executor(None, future.result, timeout_s),
-            timeout=timeout_s + 0.5,
-        )
+        result = future.result(timeout=timeout_s + 0.5)
         return result, path
-    except (asyncio.TimeoutError, concurrent.futures.TimeoutError):
+    except concurrent.futures.TimeoutError:
         timeout_ms = int(timeout_s * 1000)
-        termination = await _terminate_stuck_execution(request_id, future)
+        termination = _terminate_stuck_execution(request_id, future)
         return _timeout_response(timeout_ms, termination), path

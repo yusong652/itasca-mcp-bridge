@@ -12,7 +12,7 @@ import os
 import sys
 import time
 import traceback
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from .main_thread import MainThreadExecutor
 from ..utils import (
@@ -231,8 +231,8 @@ class ScriptRunner:
             clear_current_task()
             clear_interrupt(task_id)
 
-    async def run(self, script_path, description, task_id=None):
-        # type: (str, str, Optional[str]) -> Dict[str, Any]
+    def run(self, script_path, description, task_id):
+        # type: (str, str, str) -> Dict[str, Any]
         """
         Submit script to main thread queue and return immediately.
 
