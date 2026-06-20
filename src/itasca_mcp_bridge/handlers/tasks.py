@@ -10,7 +10,7 @@ from .context import ServerContext
 from .helpers import truncate_message, require_field
 
 
-async def handle_execute_task(ctx, data):
+def handle_execute_task(ctx, data):
     # type: (ServerContext, Dict[str, Any]) -> Dict[str, Any]
     """
     Handle execute_task message - execute Python script from file path.
@@ -39,7 +39,7 @@ async def handle_execute_task(ctx, data):
 
     description = data.get("description", "")
 
-    result = await ctx.script_runner.run(
+    result = ctx.script_runner.run(
         script_path, description, task_id=task_id
     )
 
@@ -54,7 +54,7 @@ async def handle_execute_task(ctx, data):
     }
 
 
-async def handle_check_task_status(ctx, data):
+def handle_check_task_status(ctx, data):
     # type: (ServerContext, Dict[str, Any]) -> Dict[str, Any]
     """
     Handle check_task_status message.
@@ -99,7 +99,7 @@ async def handle_check_task_status(ctx, data):
     }
 
 
-async def handle_list_tasks(ctx, data):
+def handle_list_tasks(ctx, data):
     # type: (ServerContext, Dict[str, Any]) -> Dict[str, Any]
     """
     Handle list_tasks message.
@@ -130,7 +130,7 @@ async def handle_list_tasks(ctx, data):
     }
 
 
-async def handle_interrupt_task(ctx, data):
+def handle_interrupt_task(ctx, data):
     # type: (ServerContext, Dict[str, Any]) -> Dict[str, Any]
     """
     Handle interrupt_task message - request interrupt for a running task.

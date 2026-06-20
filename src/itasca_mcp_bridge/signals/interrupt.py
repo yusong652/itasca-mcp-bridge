@@ -11,7 +11,7 @@ Key constraints:
 - Must register global function in __main__ before use
 
 Architecture:
-- WebSocket thread: calls request_interrupt(task_id) when user cancels
+- HTTP request thread: calls request_interrupt(task_id) when user cancels
 - Main thread: script execution with set_current_task()/clear_current_task()
 - ITASCA callback: _pfc_interrupt_check() checks flag each cycle
 
@@ -42,7 +42,7 @@ def request_interrupt(task_id):
     """
     Request interrupt for a running task.
 
-    Called from WebSocket handler thread when user requests cancellation.
+    Called from HTTP request handler thread when user requests cancellation.
 
     Args:
         task_id: Task ID to interrupt

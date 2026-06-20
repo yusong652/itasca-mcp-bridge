@@ -108,16 +108,11 @@ def _run_blocking_pump(main_executor, interval_ms, max_tasks_per_tick, logger):
 def start(
     host="localhost",
     port=9001,
-    ping_interval=120,
-    ping_timeout=300,
-    timer_interval_ms=DEFAULT_TIMER_INTERVAL_MS,
-    max_tasks_per_tick=DEFAULT_MAX_TASKS_PER_TICK,
     mode="auto",
 ):
     """Start the bridge server and task pump. See `itasca_mcp_bridge.start`."""
     import sys
     import os
-    import asyncio
     import logging
 
     from . import __version__
@@ -128,14 +123,10 @@ def start(
             "Invalid mode '{}'. Expected one of: {}".format(mode, ", ".join(VALID_RUNTIME_MODES))
         )
 
-    def _to_positive_int(value, default):
-        try:
-            parsed = int(value)
-        except (TypeError, ValueError):
-            return default
-        return parsed if parsed > 0 else default
-
-    interval_ms = _to_positive_int(timer_interval_ms, DEFAULT_TIMER_INTERVAL_MS)
+    # Pump cadence and per-tick task budget are bridge implementation details,
+    # not start() knobs (mirrors yade-mcp). Sourced from the module constants.
+    interval_ms = DEFAULT_TIMER_INTERVAL_MS
+    max_tasks_per_tick = DEFAULT_MAX_TASKS_PER_TICK
 
     # ── Logging ───────────────────────────────────────────────
     # Freeze the bridge root to the launch directory before any task can run.
@@ -219,25 +210,23 @@ def start(
     finally:
         sock.close()
 
-    # ── Start WebSocket server ────────────────────────────────
-    pfc_server = create_server(
+    # ── Start HTTP server ─────────────────────────────────────
+    # The server binds eagerly in create_server() (so a port conflict would
+    # already have raised above on this thread); serve_forever() then runs on
+    # a daemon thread. ThreadingMixIn serves each request on its own thread,
+    # so a long execute_code never blocks status queries or the SSE stream.
+    itasca_server = create_server(
         main_executor=main_executor, host=host, port=port,
-        ping_interval=ping_interval, ping_timeout=ping_timeout,
         runtime_mode=mode,
     )
 
     def run_server_background():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
         try:
-            loop.run_until_complete(pfc_server.start())
-            loop.run_forever()
+            itasca_server.serve_forever()
         except Exception as e:
             logger.error("Server error: {}".format(e))
             import traceback
             traceback.print_exc()
-        finally:
-            loop.close()
 
     import threading
     server_thread = threading.Thread(target=run_server_background, daemon=True)
@@ -255,7 +244,7 @@ def start(
     print("  Version:  {}".format(__version__))
     if upgraded_from:
         print("  Upgraded: {} -> {}".format(upgraded_from, __version__))
-    print("  URL:      ws://{}:{}".format(host, port))
+    print("  URL:      http://{}:{}".format(host, port))
     print("  Log:      {}".format(log_file))
     print("=" * 60 + "\n")
 
@@ -273,7 +262,7 @@ def start(
     use_blocking = mode in ("auto", "console")
 
     if use_qt and _start_qt_pump(main_executor, interval_ms, max_tasks_per_tick, logger):
-        pfc_server.set_runtime_mode("gui")
+        itasca_server.set_runtime_mode("gui")
         print("Task loop running via Qt timer (interval={}ms, max_tasks_per_tick={})".format(
             interval_ms, max_tasks_per_tick))
         return
@@ -282,7 +271,7 @@ def start(
         raise RuntimeError("Qt is not available; cannot start in gui mode")
 
     if use_blocking:
-        pfc_server.set_runtime_mode("console")
+        itasca_server.set_runtime_mode("console")
         print("Task loop running via blocking poll (interval={}ms)".format(interval_ms))
         print("Bridge started in blocking mode (console). Press Ctrl+C to stop.")
         _run_blocking_pump(main_executor, interval_ms, max_tasks_per_tick, logger)

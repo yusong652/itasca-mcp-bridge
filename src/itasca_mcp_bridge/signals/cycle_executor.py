@@ -11,7 +11,7 @@ Only used while a task occupies the queue; idle execute_code goes
 through ``MainThreadExecutor`` directly.
 
 Architecture:
-- WebSocket thread: calls ``submit_snippet(code, request_id)`` -> queued
+- HTTP request thread: calls ``submit_snippet(code, request_id)`` -> queued
 - ITASCA callback:  ``_pfc_executor_callback()`` batch-executes pending
 - Results returned via ``Future`` objects
 
@@ -47,7 +47,7 @@ MAX_BATCH_SIZE = 10
 
 
 # =============================================================================
-# External Interface (Called from WebSocket thread)
+# External Interface (Called from HTTP request thread)
 # =============================================================================
 
 def submit_snippet(code, request_id):
@@ -55,7 +55,7 @@ def submit_snippet(code, request_id):
     """
     Queue a code snippet for execution at the next ITASCA cycle gap.
 
-    Called from the WebSocket handler thread when the main task queue is
+    Called from the HTTP request handler thread when the main task queue is
     blocked by a running task. The snippet is queued; the ITASCA callback
     batch-executes pending snippets at the next cycle boundary.
 

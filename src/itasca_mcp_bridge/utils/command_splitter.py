@@ -3,7 +3,7 @@ Command Splitter - Preprocess scripts to split multi-line itasca.command() calls
 
 When itasca.command() receives a multi-line string containing multiple ITASCA
 commands, the ITASCA C extension holds the GIL for the entire batch, blocking
-all other Python threads (including the Bridge WebSocket event loop).
+all other Python threads (including the Bridge HTTP server threads).
 
 This module transforms such calls into individual itasca.command() calls,
 allowing the GIL to be released between commands.

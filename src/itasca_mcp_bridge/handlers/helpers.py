@@ -36,7 +36,7 @@ def require_field(data, field_name, request_id, response_type="result"):
 def truncate_message(message, max_length=5000):
     # type: (str, int) -> str
     """
-    Truncate message if too long to prevent WebSocket/JSON size issues.
+    Truncate message if too long to prevent transport/JSON size issues.
 
     Args:
         message: Original message string

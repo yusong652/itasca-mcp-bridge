@@ -1,19 +1,30 @@
 """
-ITASCA WebSocket Server - Lightweight server to run in the ITASCA product GUI IPython shell.
+ITASCA HTTP + SSE bridge server - runs inside the ITASCA product GUI.
 
-This module provides WebSocket server components for remote ITASCA control.
-Server startup should be done via start_bridge.py script.
+Transport is stdlib only (``http.server`` + Server-Sent Events): no
+third-party dependency and no asyncio. Each request is served on its own
+thread (``ThreadingMixIn``), so a long-blocking ``execute_code`` never stalls
+a concurrent status query. Request/response is plain ``POST /<command>``;
+the one server->client doorbell (``task_status_changed``) is pushed over a
+single long-lived ``GET /events`` SSE stream.
+
+Script-only workflow: ITASCA operations are executed through Python scripts
+using ``itasca.command()``. This module only owns transport; the main-thread
+execution semantics (queue vs cycle-gap callback, two-layer termination) live
+in ``execution`` / ``handlers.exec_strategy`` and are untouched by the wire.
+
+Python 3.6 compatible implementation (PFC 6/7 embedded interpreter).
 """
 
-import asyncio
+import http.server
 import json
 import logging
-from typing import Any, Dict, Optional
+import queue
+import socketserver
+import threading
+import time
 
-import websockets
-from websockets.server import WebSocketServerProtocol  # type: ignore
-
-from .execution import ScriptRunner, MainThreadExecutor
+from .execution import ScriptRunner
 from .tasks import TaskManager
 from .handlers import (
     ServerContext,
@@ -21,281 +32,406 @@ from .handlers import (
     handle_check_task_status,
     handle_list_tasks,
     handle_execute_code,
-    handle_get_working_directory,
-    handle_ping,
     handle_interrupt_task,
 )
 
 # Module logger
 logger = logging.getLogger("itasca-mcp-bridge")
 
+# SSE keepalive: how long an idle /events stream waits before emitting a
+# comment line. Keeps the connection (and any intermediary proxy) alive.
+_SSE_KEEPALIVE_S = 15.0
 
-class PFCWebSocketServer:
-    """WebSocket server for ITASCA script execution via main thread queue.
+# Per-client doorbell queue depth. Doorbells are payload-free signals and the
+# client always re-polls status, so a bounded queue that drops on overflow is
+# safe: it can never block the ITASCA main thread or a script thread.
+_SSE_QUEUE_MAXSIZE = 256
 
-    Script-only workflow: All ITASCA operations must be executed through Python
-    scripts using itasca.command(). Direct command execution is no longer supported.
+# Response-size safety net. Handlers already paginate/truncate task output and
+# snippet output well before this; this is only a last-resort guard against a
+# pathological single response.
+_MAX_RESPONSE_BYTES = 50 * 2 ** 20  # 50 MiB
+_TRUNCATED_TAIL_CHARS = 10000
+
+
+def _json_bytes(obj):
+    # type: (object) -> bytes
+    return json.dumps(obj).encode("utf-8")
+
+
+class _ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
+    """Thread-per-request HTTP server.
+
+    ``ThreadingMixIn`` is required: the long-lived ``GET /events`` SSE stream
+    parks a thread for the connection's lifetime, so a single-threaded server
+    would block every other request behind it. This is a 3.6-safe shim for
+    ``http.server.ThreadingHTTPServer`` (which only exists on 3.7+).
+    """
+
+    daemon_threads = True
+    allow_reuse_address = True
+
+
+class _BridgeRequestHandler(http.server.BaseHTTPRequestHandler):
+    """Maps HTTP requests onto the transport-agnostic handler dict.
+
+    ``POST /<command>`` dispatches to the request/response handler;
+    ``GET /events`` serves the SSE doorbell stream; ``GET /health`` is a
+    liveness probe. The owning ``ItascaHttpServer`` is reachable via
+    ``self.server.bridge``.
+    """
+
+    protocol_version = "HTTP/1.1"
+
+    def log_message(self, fmt, *args):
+        # Silence BaseHTTPRequestHandler's default stderr access log; the
+        # bridge logs request/response summaries through its own logger.
+        pass
+
+    @property
+    def _bridge(self):
+        return self.server.bridge
+
+    def _write_json(self, status, payload_bytes):
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload_bytes)))
+        self.end_headers()
+        try:
+            self.wfile.write(payload_bytes)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
+    def _read_body(self):
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except (TypeError, ValueError):
+            length = 0
+        return self.rfile.read(length) if length > 0 else b""
+
+    def do_POST(self):
+        command = self.path.split("?", 1)[0].strip("/")
+        raw = self._read_body()
+
+        handler = self._bridge.handlers.get(command)
+        if handler is None:
+            self._write_json(
+                404,
+                _json_bytes({
+                    "type": "error",
+                    "status": "error",
+                    "message": "Unknown command: {}".format(command),
+                    "error": {
+                        "code": "unknown_command",
+                        "message": "Unknown command: {}".format(command),
+                        "details": {"available_commands": self._bridge.public_commands},
+                    },
+                }),
+            )
+            return
+
+        try:
+            data = json.loads(raw.decode("utf-8")) if raw else {}
+        except (ValueError, UnicodeDecodeError) as exc:
+            self._write_json(
+                400,
+                _json_bytes({
+                    "type": "error",
+                    "status": "error",
+                    "message": "Invalid JSON format",
+                    "error": {
+                        "code": "invalid_json",
+                        "message": "Invalid JSON format",
+                        "details": {"error": str(exc)},
+                    },
+                }),
+            )
+            return
+
+        request_id = data.get("request_id", "unknown")
+        summary = self._bridge.summarize_request(command, data)
+        logger.info("[%s] >> %s %s", str(request_id)[:8], command, summary)
+
+        t0 = time.time()
+        try:
+            response = handler(self._bridge.context, data)
+        except Exception as exc:  # last-resort net; handlers build their own error envelopes
+            logger.error("[%s] handler error: %s", str(request_id)[:8], exc)
+            self._write_json(
+                500,
+                _json_bytes({
+                    "type": "error",
+                    "request_id": request_id,
+                    "status": "error",
+                    "message": "Internal server error",
+                    "error": {
+                        "code": "internal_error",
+                        "message": "Internal server error",
+                        "details": {"error": str(exc)},
+                    },
+                }),
+            )
+            return
+        elapsed_ms = (time.time() - t0) * 1000
+
+        status = response.get("status", "unknown")
+        logger.info("[%s] << %s status=%s (%.0fms)", str(request_id)[:8], command, status, elapsed_ms)
+
+        self._write_json(200, self._bridge.serialize_response(response, request_id))
+
+    def do_GET(self):
+        path = self.path.split("?", 1)[0]
+        if path == "/events":
+            self._serve_sse()
+        elif path == "/health":
+            self._serve_health()
+        else:
+            self._write_json(
+                404,
+                _json_bytes({"status": "error", "error": {"code": "not_found", "message": "Not found"}}),
+            )
+
+    def _serve_health(self):
+        """Liveness probe for curl / pre-flight checks."""
+        from . import __version__  # lazy: package __init__ imports this module
+
+        payload = {
+            "status": "success",
+            "version": __version__,
+            "runtime_mode": self._bridge.context.runtime_mode,
+        }
+        self._write_json(200, _json_bytes(payload))
+
+    def _serve_sse(self):
+        q = self._bridge.register_sse_client()
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "keep-alive")
+            self.end_headers()
+            self.wfile.write(b": connected\n\n")
+            self.wfile.flush()
+            while True:
+                try:
+                    msg = q.get(timeout=_SSE_KEEPALIVE_S)
+                except queue.Empty:
+                    # Keepalive comment line (ignored by the client parser).
+                    self.wfile.write(b": keepalive\n\n")
+                    self.wfile.flush()
+                    continue
+                self.wfile.write(b"data: " + msg.encode("utf-8") + b"\n\n")
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, ValueError):
+            # Client went away; fall through to deregister.
+            pass
+        finally:
+            self._bridge.unregister_sse_client(q)
+
+
+class ItascaHttpServer:
+    """HTTP + SSE bridge for executing code and running script tasks inside ITASCA.
+
+    Owns transport only. The main-thread execution model (``MainThreadExecutor``
+    queue, ``ScriptRunner``, cycle-gap snippet callback, two-layer termination)
+    is reached through ``self.context`` and is independent of the wire protocol.
     """
 
     def __init__(
         self,
-        main_executor,  # type: MainThreadExecutor
+        main_executor,  # type: object
         host="localhost",  # type: str
         port=9001,  # type: int
-        ping_interval=120,  # type: int
-        ping_timeout=300,  # type: int
         runtime_mode="unknown",  # type: str
     ):
         # type: (...) -> None
-        """
-        Initialize WebSocket server.
-
-        Args:
-            main_executor: Main thread executor for queue-based command execution
-            host: Server host address (default: "localhost")
-            port: Server port number (default: 9001)
-            ping_interval: Interval between ping frames in seconds (default: 120)
-                Note: Longer interval (2 min) to accommodate long-running commands
-            ping_timeout: Timeout for pong response in seconds (default: 300)
-                Note: Longer timeout (5 min) to prevent disconnection during long tasks
-        """
         self.main_executor = main_executor
         self.host = host
         self.port = port
-        self.ping_interval = ping_interval
-        self.ping_timeout = ping_timeout
+
+        # Registry of connected SSE clients: one bounded queue per client.
+        # Mutated from SSE request threads (connect/disconnect) and snapshotted
+        # by the broadcast path, so all access is guarded by ``_conn_lock``.
         self.active_connections = set()
-        self.server = None
-        self._loop = None  # type: Any  # set when server starts
+        self._conn_lock = threading.Lock()
 
         task_manager = TaskManager(on_task_terminal=self._broadcast_task_status)
         self.script_runner = ScriptRunner(main_executor, task_manager)
 
-        # Create server context for handlers
-        self._context = ServerContext(
+        # Single home for handler dependencies; handlers reach them via
+        # ``self.context``, never as server attributes.
+        self.context = ServerContext(
             task_manager=task_manager,
             script_runner=self.script_runner,
             main_executor=self.main_executor,
             runtime_mode=runtime_mode,
         )
 
-        # Message handlers registry (all handlers are async with unified signature)
-        self._handlers = {
+        self.handlers = {
             "execute_task": handle_execute_task,
             "check_task_status": handle_check_task_status,
             "list_tasks": handle_list_tasks,
-            "get_working_directory": handle_get_working_directory,
             "interrupt_task": handle_interrupt_task,
             "execute_code": handle_execute_code,
-            "ping": handle_ping,
         }
+        # Canonical command names advertised to callers (unknown_command errors).
+        self.public_commands = sorted(self.handlers)
 
-    async def _send_response(
-        self,
-        websocket: WebSocketServerProtocol,
-        response: Dict[str, Any],
-        request_id: str = "unknown"
-    ) -> bool:
-        """
-        Send response to client with connection error handling.
+        # Bind eagerly so a port conflict surfaces on the calling (main)
+        # thread, before the serving thread starts.
+        self._httpd = _ThreadingHTTPServer((host, port), _BridgeRequestHandler)
+        self._httpd.bridge = self
 
-        Args:
-            websocket: WebSocket connection instance
-            response: Response dictionary to send
-            request_id: Request ID for logging
+    # -- SSE client registry -------------------------------------------------
 
-        Returns:
-            True if sent successfully, False if connection closed
-        """
-        try:
-            await websocket.send(json.dumps(response))
-            return True
-        except websockets.exceptions.ConnectionClosed:
-            logger.warning(f"Cannot send result, connection closed: {request_id}")
-            return False
+    def register_sse_client(self):
+        q = queue.Queue(maxsize=_SSE_QUEUE_MAXSIZE)
+        with self._conn_lock:
+            self.active_connections.add(q)
+            total = len(self.active_connections)
+        logger.info("SSE client connected (total=%d)", total)
+        return q
 
-    async def _process_message(self, websocket: WebSocketServerProtocol, message: str):
-        """
-        Process a single WebSocket message concurrently.
+    def unregister_sse_client(self, q):
+        with self._conn_lock:
+            self.active_connections.discard(q)
+            total = len(self.active_connections)
+        logger.info("SSE client disconnected (total=%d)", total)
 
-        This method is spawned as an independent task for each incoming message,
-        allowing lightweight operations (ping, status queries) to complete even
-        while long-running foreground tasks are executing.
-
-        Args:
-            websocket: WebSocket connection instance
-            message: Raw message string to process
-        """
-        try:
-            # Parse incoming message
-            data = json.loads(message)
-            msg_type = data.get("type", "execute_task")
-            request_id = data.get("request_id", "unknown")
-
-            # Route to appropriate handler
-            handler = self._handlers.get(msg_type)
-            if handler:
-                response = await handler(self._context, data)
-                # Send response (ignore connection closed - will be handled by main loop)
-                await self._send_response(websocket, response, request_id)
-            else:
-                logger.warning(f"Unknown message type: {msg_type}")
-
-        except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON: {e}")
-            error_response = {
-                "type": "error",
-                "message": "Invalid JSON format",
-                "error": str(e)
-            }
-            await self._send_response(websocket, error_response)
-
-        except asyncio.CancelledError:
-            # Task was cancelled (connection closed), silently exit
-            raise
-
-        except Exception as e:
-            logger.error(f"Message handling error: {e}")
-            error_response = {
-                "type": "error",
-                "message": "Internal server error",
-                "error": str(e)
-            }
-            await self._send_response(websocket, error_response)
+    # -- Server->client doorbell --------------------------------------------
 
     def _broadcast_task_status(self, task_id, status):
         # type: (str, str) -> None
-        """Broadcast task status change to all connected clients.
+        """Push a payload-free doorbell to every connected SSE client.
 
-        Called from the ITASCA main thread (via Future callback), not the
-        asyncio event loop thread, so we use run_coroutine_threadsafe.
+        Snapshot the queue set under the lock, then ``put_nowait`` outside it
+        (never hold the lock across a put). Called from the ITASCA main thread
+        (via TaskManager's terminal callback). ``queue.Queue`` is thread-safe;
+        on overflow the doorbell is dropped because the client always re-polls
+        status.
         """
-        if not self._loop or not self.active_connections:
-            return
-
+        with self._conn_lock:
+            if not self.active_connections:
+                return
+            queues = list(self.active_connections)
         msg = json.dumps({
             "type": "task_status_changed",
             "task_id": task_id,
             "status": status,
         })
+        for q in queues:
+            try:
+                q.put_nowait(msg)
+            except queue.Full:
+                pass
 
-        async def _send_all():
-            for ws in list(self.active_connections):
-                try:
-                    await ws.send(msg)
-                except Exception:
-                    pass
+    # -- Response serialization ---------------------------------------------
 
-        asyncio.run_coroutine_threadsafe(_send_all(), self._loop)
-
-    async def handle_client(self, websocket: WebSocketServerProtocol, path: Optional[str] = None):
-        """
-        Handle WebSocket client connection with concurrent message processing.
-
-        Each incoming message is processed in a separate async task, preventing
-        long-running foreground tasks from blocking lightweight operations like
-        ping/pong heartbeats and status queries.
-
-        Args:
-            websocket: WebSocket connection instance
-            path: Optional request path for legacy websockets handler compatibility
-        """
-        self.active_connections.add(websocket)
-        pending_tasks = set()  # type: set
-
-        try:
-            async for message in websocket:
-                # Spawn independent task for each message (non-blocking)
-                task = asyncio.ensure_future(
-                    self._process_message(websocket, message)
-                )
-                pending_tasks.add(task)
-                task.add_done_callback(pending_tasks.discard)
-
-        except websockets.exceptions.ConnectionClosed:
-            pass  # Client disconnected normally
-
-        finally:
-            # Cancel pending response tasks (connection is closing)
-            for task in pending_tasks:
-                task.cancel()
-            # Wait briefly for cancellations to complete
-            if pending_tasks:
-                await asyncio.gather(*pending_tasks, return_exceptions=True)
-            self.active_connections.discard(websocket)
-
-    async def start(self):
-        """Start the WebSocket server (non-blocking)."""
-        self._loop = asyncio.get_event_loop()
-
-        try:
-            # This call shape works with both legacy websockets 9.1 and modern 16.x.
-            self.server = await websockets.serve(
-                self.handle_client,
-                self.host,
-                self.port,
-                ping_interval=self.ping_interval,
-                ping_timeout=self.ping_timeout,
-                max_size=50 * 2**20,
+    def serialize_response(self, response, request_id="unknown"):
+        payload = json.dumps(response)
+        if len(payload) > _MAX_RESPONSE_BYTES:
+            logger.warning(
+                "[%s] Response too large (%d bytes), truncating output",
+                str(request_id)[:8], len(payload),
             )
+            response = self._truncate_response(response)
+            payload = json.dumps(response)
+        return payload.encode("utf-8")
 
-            # Note: Server is now running in the background
-            # websockets.serve() automatically handles connections via the event loop
-            # No need to block here - the server will continue running as long as
-            # the event loop is active
+    @staticmethod
+    def _truncate_response(response):
+        """Last-resort truncation when a response blows past the byte cap.
 
-        except Exception as e:
-            logger.error(f"Server error: {e}")
-            raise
+        Keeps the TAIL of ``data["output"]`` (most recent content), since
+        monitoring cares about current progress, not the start of a long log.
+        Bridge-side pagination already limits output before this path.
+        """
+        data = response.get("data", {})
+        if isinstance(data, dict) and "output" in data:
+            output = data["output"]
+            if isinstance(output, str) and len(output) > _TRUNCATED_TAIL_CHARS:
+                tail = output[-_TRUNCATED_TAIL_CHARS:]
+                nl = tail.find("\n")
+                if nl >= 0:
+                    tail = tail[nl + 1:]
+                omitted = len(output) - len(tail)
+                data["output"] = (
+                    "... [TRUNCATED: {} earlier chars omitted, showing most "
+                    "recent {} chars. Consider writing output to file instead "
+                    "of printing.]\n".format(omitted, len(tail))
+                ) + tail
+                response["data"] = data
+        return response
 
-    async def wait_closed(self):
-        """Wait for server to close (for graceful shutdown)."""
-        if self.server:
-            await self.server.wait_closed()
+    def summarize_request(self, command, data):
+        """Build a short log summary for an incoming request."""
+        if command == "execute_code":
+            code = data.get("code", "")
+            preview = code[:80].replace("\n", "\\n")
+            if len(code) > 80:
+                preview += "..."
+            return 'code="{}"'.format(preview)
+        if command == "execute_task":
+            return 'script="{}" desc="{}"'.format(
+                data.get("script_path", "?"), data.get("description", "")[:60]
+            )
+        if command in ("check_task_status", "interrupt_task"):
+            return "task_id={}".format(data.get("task_id", "?"))
+        if command == "list_tasks":
+            return "offset={} limit={}".format(data.get("offset", 0), data.get("limit", "all"))
+        return ""
+
+    # -- Lifecycle ----------------------------------------------------------
+
+    def serve_forever(self):
+        logger.info("HTTP bridge listening on http://%s:%d", self.host, self.port)
+        self._httpd.serve_forever()
+
+    def shutdown(self):
+        """Graceful shutdown: stop the HTTP server.
+
+        ``HTTPServer.shutdown()`` must be called from a thread other than the
+        one running ``serve_forever`` - here the main thread, while serving
+        runs on a daemon thread. Task state is already persisted on every
+        status change (TaskManager._save_tasks), so there is nothing to flush.
+        """
+        try:
+            self._httpd.shutdown()
+        except Exception:
+            pass
+        try:
+            self._httpd.server_close()
+        except Exception:
+            pass
+        logger.info("Server shutdown complete")
 
     def set_runtime_mode(self, runtime_mode):
         # type: (str) -> None
         """Update active runtime mode exposed to handlers."""
-        self._context.runtime_mode = runtime_mode
+        self.context.runtime_mode = runtime_mode
 
 
-# Module-level utility function for creating server instances
 def create_server(
-    main_executor,  # type: MainThreadExecutor
+    main_executor,  # type: object
     host="localhost",  # type: str
     port=9001,  # type: int
-    ping_interval=120,  # type: int
-    ping_timeout=300,  # type: int
     runtime_mode="unknown",  # type: str
 ):
-    # type: (...) -> PFCWebSocketServer
-    """
-    Create an ITASCA WebSocket server instance.
+    # type: (...) -> ItascaHttpServer
+    """Create an ITASCA HTTP + SSE bridge server instance.
 
     Args:
-        main_executor: Main thread executor for queue-based command execution
+        main_executor: Main thread executor for queue-based execution
         host: Server host address (default: "localhost")
         port: Server port number (default: 9001)
-        ping_interval: Interval between ping frames in seconds (default: 120)
-            Note: Longer interval (2 min) to accommodate long-running commands
-        ping_timeout: Timeout for pong response in seconds (default: 300)
-            Note: Longer timeout (5 min) to prevent disconnection during long tasks
+        runtime_mode: Active bridge runtime mode ("gui" / "console" / ...)
 
     Returns:
-        PFCWebSocketServer: Server instance ready to be started
-
-    Example:
-        >>> from pfc_server.main_thread_executor import MainThreadExecutor
-        >>> from pfc_server.server import create_server
-        >>> executor = MainThreadExecutor()
-        >>> server = create_server(executor, host="localhost", port=9001)
-        >>> # Use with startup script
+        ItascaHttpServer: Server instance ready to be started via serve_forever().
     """
-    return PFCWebSocketServer(
+    return ItascaHttpServer(
         main_executor,
-        host,
-        port,
-        ping_interval,
-        ping_timeout,
+        host=host,
+        port=port,
         runtime_mode=runtime_mode,
     )
