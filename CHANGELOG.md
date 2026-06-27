@@ -4,6 +4,25 @@ All notable changes to `itasca-mcp-bridge` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-06-27
+
+### Changed
+- **Transport replaced: WebSocket → stdlib HTTP + SSE.** The bridge no longer
+  speaks WebSocket. Requests are served over plain HTTP (`http.server`), and
+  the server→client doorbell rides a payload-free Server-Sent Events stream.
+  This removes the last third-party-shaped surface from the transport: the
+  bridge stays stdlib-only and installs cleanly into any ITASCA embedded
+  Python (3.6+) with no pins. The request → execute → result interaction is
+  simple enough that a transport library's duplex/heartbeat/version machinery
+  was never load-bearing here.
+
+  **Breaking:** clients must speak HTTP + SSE. Use `itasca-mcp` (>= 0.6.0) or
+  another `*-mcp` client built against this transport. WebSocket-era clients
+  (`pfc-mcp` <= 0.5.0, `flac-mcp` <= 0.5.1) cannot connect until upgraded —
+  and because the bridge self-upgrades from PyPI on every start, an existing
+  install will pick this up automatically, so those clients must upgrade in
+  step.
+
 ## [0.3.0] - 2026-06-18
 
 ### Fixed
