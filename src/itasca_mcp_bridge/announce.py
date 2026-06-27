@@ -31,6 +31,12 @@ ANNOUNCEMENTS = {
         "After a self-upgrade, this whats-new list shows what the new release "
         "brings; reprint it anytime with itasca_mcp_bridge.whats_new().",
     ),
+    "0.4.0": (
+        "Transport switched from WebSocket to stdlib HTTP + SSE: the bridge is "
+        "now HTTP-only and stays dependency-free (any embedded Python 3.6+).",
+        "Your MCP client must speak HTTP+SSE -- use itasca-mcp >= 0.6.0. "
+        "pfc-mcp / flac-mcp users: migrate to itasca-mcp (WebSocket clients can't connect).",
+    ),
 }
 
 
