@@ -99,7 +99,9 @@ class _BridgeRequestHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         try:
             self.wfile.write(payload_bytes)
-        except (BrokenPipeError, ConnectionResetError):
+        except ConnectionError:
+            # Client went away mid-response (BrokenPipe / ConnectionReset /
+            # ConnectionAborted on Windows, WinError 10053); drop quietly.
             pass
 
     def _read_body(self):
@@ -222,8 +224,9 @@ class _BridgeRequestHandler(http.server.BaseHTTPRequestHandler):
                     continue
                 self.wfile.write(b"data: " + msg.encode("utf-8") + b"\n\n")
                 self.wfile.flush()
-        except (BrokenPipeError, ConnectionResetError, ValueError):
-            # Client went away; fall through to deregister.
+        except (ConnectionError, ValueError):
+            # Client went away (BrokenPipe / ConnectionReset / ConnectionAborted
+            # on Windows, WinError 10053); fall through to deregister quietly.
             pass
         finally:
             self._bridge.unregister_sse_client(q)
