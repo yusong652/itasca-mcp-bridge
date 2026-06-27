@@ -4,6 +4,20 @@ All notable changes to `itasca-mcp-bridge` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-06-28
+
+### Fixed
+- Stop a client disconnect from dumping a traceback into the engine GUI
+  console. On Windows a dropped socket is aborted with **WinError 10053**,
+  raised as `ConnectionAbortedError` — a sibling of the already-caught
+  `ConnectionResetError`/`BrokenPipeError` under the common `ConnectionError`
+  base. Both socket-write paths — the long-lived `GET /events` SSE
+  keepalive/data push and the `POST` response writer — caught only the latter
+  two, so a client dropping mid-write (e.g. an MCP client's SSE stream
+  reconnecting) surfaced as a noisy `ConnectionAbortedError` traceback in the
+  product console instead of the connection deregistering quietly. Both
+  handlers now widen to the `ConnectionError` base, which covers all three.
+
 ## [0.4.0] - 2026-06-27
 
 ### Changed
