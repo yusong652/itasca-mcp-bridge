@@ -16,6 +16,22 @@ On Windows, Python cannot read the file until `program log off` releases the
 lock. Per-call on/off is the only way to read incrementally; the per-pair
 overhead measured ~1.4–1.8 ms (negligible for typical snippet sizes).
 
+Why one patch with a context stack (vs. one patch per scope):
+
+Capture scopes nest: a snippet arriving through the cycle-gap callback while
+a task script is cycling opens a second scope inside the task's. With one
+patch per scope, the inner scope grabs the outer *wrapper* as its "original",
+so even its own log-control commands get re-wrapped in another on/off
+triple — and that extra `program log on truncate` wipes the inner scope's
+log file before it is read, silently emptying the capture (#28). The patch
+is therefore installed once, module-owned, over the real SDK function; each
+scope pushes its log file + sink onto a stack and the wrapper always targets
+the innermost scope. Control commands never pass through another wrapper.
+
+No locking on the stack: every capture scope runs on ITASCA's main thread
+(task scripts via MainThreadExecutor, snippets via the idle queue or the
+cycle-gap callback), so scopes strictly nest and never race.
+
 Python 3.6 compatible.
 """
 
@@ -25,6 +41,25 @@ import uuid
 from contextlib import contextmanager
 
 logger = logging.getLogger("itasca-mcp-bridge")
+
+# Innermost capture scope last. Non-empty exactly while the patch is
+# installed and `_orig_command` holds the real itasca.command.
+_stack = []
+_orig_command = None
+
+
+class _CaptureContext(object):
+    __slots__ = ("log_path", "log_path_pfc", "sink", "in_command")
+
+    def __init__(self, log_path, sink):
+        # type: (str, object) -> None
+        self.log_path = log_path
+        self.log_path_pfc = log_path.replace("\\", "/")
+        self.sink = sink
+        # True while this scope's wrapped user command is executing —
+        # i.e. its log session is live and an inner scope entering now
+        # is interrupting it (and must resume it on exit).
+        self.in_command = False
 
 
 def _strip_footer(content):
@@ -37,6 +72,33 @@ def _strip_footer(content):
         if "program log off" in lines[i]:
             return "".join(lines[:i])
     return content
+
+
+def _read_and_strip(log_path):
+    # type: (str) -> str
+    try:
+        with open(log_path, encoding="utf-8", errors="replace") as f:
+            return _strip_footer(f.read())
+    except OSError:
+        return ""
+
+
+def _patched(cmd):
+    # type: (str) -> None
+    ctx = _stack[-1]
+    _orig_command("program log on truncate show-message off")
+    ctx.in_command = True
+    try:
+        _orig_command(cmd)
+    finally:
+        ctx.in_command = False
+        _orig_command("program log off")
+        chunk = _read_and_strip(ctx.log_path)
+        if chunk:
+            try:
+                ctx.sink.write(chunk)
+            except Exception as e:
+                logger.warning("capture_pfc_console: stdout write failed: %s", e)
 
 
 @contextmanager
@@ -59,11 +121,20 @@ def capture_pfc_console(stdout_sink, log_dir):
             program log off
         The per-cmd output is then read from disk and written to stdout_sink.
 
+    Nesting:
+        Scopes may nest (snippet inside a cycling task). The inner scope
+        captures into its own file and sink; on exit the outer scope's log
+        file is restored, and if the inner scope interrupted a live outer
+        log session (task mid-command), that session is resumed in append
+        mode so the outer command's remaining output is still captured.
+
     Restoration:
-        itasca.command is always restored on exit (including exceptions).
-        Errors raised by user commands propagate; partial output captured
-        before the error is still flushed to stdout_sink.
+        itasca.command is always restored on exit of the outermost scope
+        (including exceptions). Errors raised by user commands propagate;
+        partial output captured before the error is still flushed to
+        stdout_sink.
     """
+    global _orig_command
     import itasca
 
     # Resolve to an absolute path: the ITASCA command interpreter resolves
@@ -80,41 +151,47 @@ def capture_pfc_console(stdout_sink, log_dir):
         except OSError:
             pass
 
-    log_path = os.path.join(log_dir, f"cmdtmp_{uuid.uuid4().hex[:8]}.log")
-    log_path_pfc = log_path.replace("\\", "/")
+    ctx = _CaptureContext(
+        os.path.join(log_dir, f"cmdtmp_{uuid.uuid4().hex[:8]}.log"), stdout_sink
+    )
 
-    orig_command = itasca.command
+    if not _stack:
+        _orig_command = itasca.command
 
-    def _read_and_strip():
-        try:
-            with open(log_path, encoding="utf-8", errors="replace") as f:
-                return _strip_footer(f.read())
-        except OSError:
-            return ""
+    # Point ITASCA's log file at this scope's file. Entering an inner scope
+    # while the outer one is mid-command ends the outer's live log session;
+    # it is resumed on exit below.
+    try:
+        _orig_command(f"program log-file '{ctx.log_path_pfc}'")
+    except BaseException:
+        if not _stack:
+            _orig_command = None
+        raise
 
-    def patched(cmd):
-        orig_command("program log on truncate show-message off")
-        try:
-            orig_command(cmd)
-        finally:
-            orig_command("program log off")
-            chunk = _read_and_strip()
-            if chunk:
-                try:
-                    stdout_sink.write(chunk)
-                except Exception as e:
-                    logger.warning("capture_pfc_console: stdout write failed: %s", e)
-
-    # Set the log file path once; only on/off toggles per call.
-    orig_command(f"program log-file '{log_path_pfc}'")
-
-    itasca.command = patched
+    _stack.append(ctx)
+    itasca.command = _patched
     try:
         yield
     finally:
-        itasca.command = orig_command
+        _stack.pop()
+        if _stack:
+            outer = _stack[-1]
+            try:
+                _orig_command(f"program log-file '{outer.log_path_pfc}'")
+                if outer.in_command:
+                    # Resume the outer session in append mode (no truncate):
+                    # its pre-interruption output is still in the file.
+                    _orig_command("program log on show-message off")
+            except Exception as e:
+                logger.warning(
+                    "capture_pfc_console: failed to restore outer log session: %s",
+                    e,
+                )
+        else:
+            itasca.command = _orig_command
+            _orig_command = None
         try:
-            if os.path.exists(log_path):
-                os.remove(log_path)
+            if os.path.exists(ctx.log_path):
+                os.remove(ctx.log_path)
         except OSError:
             pass
