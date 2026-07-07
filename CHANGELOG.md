@@ -4,6 +4,17 @@ All notable changes to `itasca-mcp-bridge` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2026-07-07
+
+### Documentation
+- READMEs (English and Simplified Chinese) rewritten for the stdlib
+  HTTP + SSE transport that shipped in 0.4.0: architecture diagram,
+  protocol table (`POST /<command>` requests, `GET /events` SSE
+  doorbell), install steps, and requirements no longer describe the
+  removed WebSocket stack. This release carries no code change; it
+  exists to refresh the PyPI project page, which still rendered the
+  WebSocket-era README from the 0.4.1 tag.
+
 ## [0.4.1] - 2026-06-28
 
 ### Fixed
