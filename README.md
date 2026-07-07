@@ -126,7 +126,7 @@ Expected output:
 ============================================================
 Itasca MCP Bridge Server
 ============================================================
-  Version:  0.4.1
+  Version:  0.4.2
   URL:      http://localhost:9001
   Log:      /your-working-dir/.itasca-mcp-bridge/bridge.log
 ============================================================
