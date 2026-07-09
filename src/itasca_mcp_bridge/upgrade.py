@@ -284,6 +284,26 @@ def _install_latest():
     return False
 
 
+def _embedded_python():
+    # type: () -> str
+    """Path to the product's bundled Python interpreter, or "".
+
+    Inside the GUI ``sys.executable`` is the product binary itself
+    (e.g. ``pfc2d700_gui.exe``), which cannot run ``-m pip``. The real
+    interpreter lives under ``sys.exec_prefix`` (``.../exe64/python36``).
+    """
+    prefixes = (sys.exec_prefix, getattr(sys, "base_prefix", ""))
+    candidates = ("python.exe", os.path.join("bin", "python3"), os.path.join("bin", "python"))
+    for prefix in prefixes:
+        if not prefix:
+            continue
+        for relative in candidates:
+            candidate = os.path.join(os.path.normpath(prefix), relative)
+            if os.path.isfile(candidate):
+                return candidate
+    return ""
+
+
 def maybe_upgrade(current_version):
     # type: (str) -> bool
     """Check for and install a newer bridge release. True if pip installed one.
@@ -310,12 +330,20 @@ def maybe_upgrade(current_version):
         )
     )
     if not _install_latest():
+        python_path = _embedded_python()
+        if python_path:
+            hint = '"{}" -m pip install --user -U {}'.format(python_path, PACKAGE_NAME)
+        else:
+            hint = '"<product install dir>/python.exe" -m pip install --user -U {}'.format(
+                PACKAGE_NAME
+            )
         print(
             "{}: upgrade failed; starting installed version {}. "
-            "The pip error is in the output above. To upgrade manually:\n"
-            "    python -m pip install --user -U {}".format(
-                PACKAGE_NAME, current_version, PACKAGE_NAME
-            )
+            "The pip error is in the output above. To upgrade manually, run "
+            "this in a terminal (it must be the product's own Python -- a "
+            "plain 'python' would install into the system interpreter "
+            "instead):\n"
+            "    {}".format(PACKAGE_NAME, current_version, hint)
         )
         return False
     return True
