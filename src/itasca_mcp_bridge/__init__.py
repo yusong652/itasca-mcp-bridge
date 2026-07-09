@@ -19,7 +19,7 @@ environment variable `ITASCA_MCP_BRIDGE_AUTO_UPGRADE=0` to pin the
 installed version.
 """
 
-__version__ = "0.4.2"
+__version__ = "0.4.3"
 
 from .announce import whats_new  # noqa: F401  (console convenience)
 from .runtime import (  # noqa: F401  (re-exported for compatibility)
