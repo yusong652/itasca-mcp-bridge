@@ -169,6 +169,99 @@ DEFAULT_PRIMARY = upgrade.DEFAULT_INDEXES[0][0]
 DEFAULT_MIRROR = upgrade.DEFAULT_INDEXES[1][0]
 
 
+class _ChannelWithoutIsatty:
+    """Mimics Itasca's RedirectstdChannel: write/flush only, no isatty."""
+
+    def __init__(self):
+        self.written = []
+
+    def write(self, text):
+        self.written.append(text)
+
+    def flush(self):
+        pass
+
+
+class TestStreamProxy:
+    def test_missing_isatty_reports_not_a_tty(self):
+        # The exact crash from the field: pip's progress bar calls
+        # file.isatty() on a GUI console channel that doesn't have it.
+        assert upgrade._StreamProxy(_ChannelWithoutIsatty()).isatty() is False
+
+    def test_existing_isatty_is_delegated(self):
+        class Tty:
+            def isatty(self):
+                return True
+
+        assert upgrade._StreamProxy(Tty()).isatty() is True
+
+    def test_write_delegates_to_wrapped_stream(self):
+        channel = _ChannelWithoutIsatty()
+        upgrade._StreamProxy(channel).write("hello")
+        assert channel.written == ["hello"]
+
+    def test_flush_tolerates_stream_without_flush(self):
+        class WriteOnly:
+            def write(self, text):
+                pass
+
+        upgrade._StreamProxy(WriteOnly()).flush()  # must not raise
+
+
+class TestRunPipStreamSafety:
+    def test_proxies_active_while_pip_resolves_and_runs(self, monkeypatch):
+        channel = _ChannelWithoutIsatty()
+        monkeypatch.setattr(sys, "stdout", channel)
+        seen = {}
+
+        def fake_resolve():
+            # pip is first imported inside _resolve_pip_main and binds
+            # sys.stdout to its progress-bar classes at import time, so
+            # the proxy must already be installed here.
+            seen["stdout_type"] = type(sys.stdout)
+            seen["isatty"] = sys.stdout.isatty()
+            return lambda args: 0
+
+        monkeypatch.setattr(upgrade, "_resolve_pip_main", fake_resolve)
+        monkeypatch.setattr(upgrade, "_progress_flags", lambda: [])
+
+        assert upgrade._run_pip(["install", "x"]) == 0
+        assert seen["stdout_type"] is upgrade._StreamProxy
+        assert seen["isatty"] is False
+        assert sys.stdout is channel  # restored
+
+    def test_streams_restored_when_pip_raises(self, monkeypatch):
+        channel = _ChannelWithoutIsatty()
+        monkeypatch.setattr(sys, "stderr", channel)
+
+        def raising_pip(args):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(upgrade, "_resolve_pip_main", lambda: raising_pip)
+        monkeypatch.setattr(upgrade, "_progress_flags", lambda: [])
+
+        try:
+            upgrade._run_pip(["install", "x"])
+        except RuntimeError:
+            pass
+        assert sys.stderr is channel
+
+    def test_progress_flags_appended_to_pip_args(self, monkeypatch):
+        recorded = {}
+
+        def fake_pip(args):
+            recorded["args"] = args
+            return 0
+
+        monkeypatch.setattr(upgrade, "_resolve_pip_main", lambda: fake_pip)
+        monkeypatch.setattr(
+            upgrade, "_progress_flags", lambda: ["--progress-bar", "off"]
+        )
+
+        assert upgrade._run_pip(["install", "x"]) == 0
+        assert recorded["args"][-2:] == ["--progress-bar", "off"]
+
+
 class TestStartDelegation:
     def test_upgrade_delegates_to_fresh_start(self, monkeypatch):
         import os

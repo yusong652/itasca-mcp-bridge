@@ -189,16 +189,67 @@ def _build_install_args(index_url, trusted_hosts):
     ]
     for host in trusted_hosts:
         args += ["--trusted-host", host]
-    if sys.version_info >= (3, 10):
-        args += ["--no-warn-script-location", "--progress-bar", "off"]
     args.append(PACKAGE_NAME)
     return args
 
 
+class _StreamProxy(object):
+    """File-like proxy guaranteeing the attributes pip's progress bar probes.
+
+    Some product GUI consoles install a stdout/stderr replacement (e.g.
+    Itasca's RedirectstdChannel) that has write/flush but no isatty. pip's
+    download progress bar calls ``file.isatty()`` unconditionally during
+    construction — the AttributeError aborts the download and therefore the
+    whole upgrade. Affects every pip that vendors ``progress`` (stock pip 9
+    on PFC 6/7, reproduced up to pip 21). Delegates everything else to the
+    wrapped stream.
+    """
+
+    def __init__(self, stream):
+        self._stream = stream
+
+    def __getattr__(self, name):
+        return getattr(self._stream, name)
+
+    def isatty(self):
+        try:
+            return bool(self._stream.isatty())
+        except Exception:
+            return False
+
+    def flush(self):
+        try:
+            self._stream.flush()
+        except Exception:
+            pass
+
+
+def _progress_flags():
+    """Extra install args to silence pip's progress bar where supported.
+
+    Both flags exist since pip 10. On older pip the isatty=False reported
+    by _StreamProxy already keeps the vendored progress bar silent.
+    """
+    try:
+        import pip
+
+        major = int(str(pip.__version__).split(".")[0])
+    except Exception:
+        return []
+    if major >= 10:
+        return ["--no-warn-script-location", "--progress-bar", "off"]
+    return []
+
+
 def _run_pip(args):
-    pip_main = _resolve_pip_main()
-    if pip_main is None:
-        return 1
+    # Swap in the isatty-safe proxies BEFORE pip is first imported: pip
+    # binds ``file = sys.stdout`` on its progress-bar classes at import
+    # time, so a later swap would not reach them.
+    previous_streams = (sys.stdout, sys.stderr)
+    if sys.stdout is not None:
+        sys.stdout = _StreamProxy(sys.stdout)
+    if sys.stderr is not None:
+        sys.stderr = _StreamProxy(sys.stderr)
 
     # The product GUI hosts pip inside an IPython process; temporarily
     # suppress logging handler tracebacks that don't reflect actual
@@ -206,9 +257,13 @@ def _run_pip(args):
     previous_raise_exceptions = logging.raiseExceptions
     logging.raiseExceptions = False
     try:
-        return pip_main(list(args))
+        pip_main = _resolve_pip_main()
+        if pip_main is None:
+            return 1
+        return pip_main(list(args) + _progress_flags())
     finally:
         logging.raiseExceptions = previous_raise_exceptions
+        sys.stdout, sys.stderr = previous_streams
 
 
 def _install_latest():
