@@ -37,6 +37,13 @@ ANNOUNCEMENTS = {
         "Your MCP client must speak HTTP+SSE -- use itasca-mcp >= 0.6.0. "
         "pfc-mcp / flac-mcp users: migrate to itasca-mcp (WebSocket clients can't connect).",
     ),
+    "0.4.3": (
+        "Self-upgrade fixed for consoles whose stdout lacks isatty: pip's "
+        "progress bar crashed the download, so upgrades silently never landed "
+        "(stock PFC 6/7 pip was affected).",
+        "The upgrade-failed hint now prints the product Python's full path -- "
+        "a plain 'python' would install into the system interpreter instead.",
+    ),
 }
 
 

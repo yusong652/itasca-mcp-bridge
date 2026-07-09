@@ -4,6 +4,33 @@ All notable changes to `itasca-mcp-bridge` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] - 2026-07-09
+
+### Fixed
+- Self-upgrade no longer dies on GUI consoles whose stdout lacks `isatty`.
+  Some product consoles replace `sys.stdout`/`sys.stderr` with a channel
+  object (Itasca's `RedirectstdChannel`) that has `write`/`flush` but no
+  `isatty`; pip's download progress bar calls `file.isatty()`
+  unconditionally during construction, so the wheel download aborted with
+  `AttributeError` and every start fell back to the installed version —
+  affected installs could never receive updates automatically. Verified
+  against stock pip 9.0.1 (PFC 6/7 embedded Python) and pip 21.3.1 alike.
+  `_run_pip` now wraps both streams in a delegating proxy answering
+  `isatty() → False`, installed before pip is first imported (pip binds
+  `sys.stdout` onto its progress-bar classes at import time), and the
+  `--progress-bar off` guard keys on pip ≥ 10 instead of Python ≥ 3.10.
+
+  **Installs already hit by this cannot self-upgrade past it** — run the
+  manual upgrade once, in a terminal, with the product's own Python:
+  `"<product dir>\exe64\python36\python.exe" -m pip install --user -U itasca-mcp-bridge`
+- The upgrade-failed hint suggested a bare `python -m pip install ...`,
+  which a terminal resolves to the *system* Python — the package landed in
+  the wrong site-packages and the bridge inside the product never saw it.
+  The hint now prints the full quoted path of the product's bundled
+  interpreter (derived from `sys.exec_prefix`; `sys.executable` is
+  unusable — inside the GUI it is the product binary itself, e.g.
+  `pfc2d700_gui.exe`) and explicitly warns against plain `python`.
+
 ## [0.4.2] - 2026-07-07
 
 ### Documentation
