@@ -169,6 +169,57 @@ DEFAULT_PRIMARY = upgrade.DEFAULT_INDEXES[0][0]
 DEFAULT_MIRROR = upgrade.DEFAULT_INDEXES[1][0]
 
 
+class TestEmbeddedPython:
+    def test_finds_windows_layout(self, monkeypatch, tmp_path):
+        exe = tmp_path / "python.exe"
+        exe.write_bytes(b"")
+        monkeypatch.setattr(sys, "exec_prefix", str(tmp_path))
+        assert upgrade._embedded_python() == str(exe)
+
+    def test_finds_posix_layout(self, monkeypatch, tmp_path):
+        bindir = tmp_path / "bin"
+        bindir.mkdir()
+        exe = bindir / "python3"
+        exe.write_bytes(b"")
+        monkeypatch.setattr(sys, "exec_prefix", str(tmp_path))
+        assert upgrade._embedded_python() == str(exe)
+
+    def test_nothing_found_returns_empty(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(sys, "exec_prefix", str(tmp_path))
+        monkeypatch.setattr(sys, "base_prefix", str(tmp_path), raising=False)
+        assert upgrade._embedded_python() == ""
+
+
+class TestUpgradeFailureHint:
+    def test_manual_hint_names_the_product_interpreter(self, monkeypatch, capsys):
+        # A bare "python -m pip ..." hint gets copy-pasted into a terminal
+        # and installs into the system interpreter; the hint must spell
+        # out the product's bundled Python instead.
+        monkeypatch.setattr(upgrade, "check_latest_version", lambda: "9.9.9")
+        monkeypatch.setattr(upgrade, "_install_latest", lambda: False)
+        monkeypatch.setattr(
+            upgrade, "_embedded_python",
+            lambda: r"C:\Program Files\Itasca\PFC700\exe64\python36\python.exe",
+        )
+
+        assert upgrade.maybe_upgrade("0.1.0") is False
+        out = capsys.readouterr().out
+        assert (
+            '"C:\\Program Files\\Itasca\\PFC700\\exe64\\python36\\python.exe"'
+            " -m pip install --user -U itasca-mcp-bridge"
+        ) in out
+        assert "\n    python -m pip" not in out
+
+    def test_manual_hint_degrades_when_interpreter_unknown(self, monkeypatch, capsys):
+        monkeypatch.setattr(upgrade, "check_latest_version", lambda: "9.9.9")
+        monkeypatch.setattr(upgrade, "_install_latest", lambda: False)
+        monkeypatch.setattr(upgrade, "_embedded_python", lambda: "")
+
+        assert upgrade.maybe_upgrade("0.1.0") is False
+        out = capsys.readouterr().out
+        assert "<product install dir>" in out
+
+
 class _ChannelWithoutIsatty:
     """Mimics Itasca's RedirectstdChannel: write/flush only, no isatty."""
 
