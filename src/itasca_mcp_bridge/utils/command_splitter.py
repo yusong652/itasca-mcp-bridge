@@ -379,15 +379,23 @@ def preprocess_source(source):
 
     module_aliases, bare_command_aliases = _collect_itasca_aliases(tree)
 
-    # Diagnostic: log multi-line .command() calls on receivers we couldn't
-    # prove are itasca aliases (e.g. `_it = itasca; _it.command("""...""")`).
-    # These slip through splitting and can stall the bridge.
+    # Diagnostic: multi-line .command() calls on receivers we couldn't
+    # prove are itasca aliases (e.g. `_it = itasca; _it.command("""...""")`)
+    # slip through splitting, so the bridge can be unreachable for the
+    # whole call (and a mid-batch `model new` runs its remaining commands
+    # with no cycle callbacks). Both execution paths redirect sys.stdout
+    # before preprocessing, so the print lands in the task/snippet output
+    # where the submitting agent actually reads.
     for node, receiver in _find_unrecognized_multiline_command_calls(tree, module_aliases):
-        logger.debug(
-            "multi-line .command() on unrecognized receiver '%s' at line %d "
-            "— splitter skipped; if this aliases itasca, the bridge may stall",
-            receiver, node.lineno,
+        msg = (
+            "[bridge warning] multi-line .command() on unrecognized receiver "
+            "'{}' (line {}) — splitter skipped; if this aliases itasca, the "
+            "bridge may be unreachable during this call. Call itasca.command "
+            "via its import name (import itasca [as x] / from itasca import "
+            "command) to get per-command splitting.".format(receiver, node.lineno)
         )
+        logger.warning(msg)
+        print(msg)
 
     calls = _find_multiline_command_calls(tree, module_aliases, bare_command_aliases)
     if not calls:

@@ -128,11 +128,13 @@ that is not pfc
     assert out == src
 
 
-def test_unrecognized_receiver_emits_debug_diagnostic(caplog):
+def test_unrecognized_receiver_warns_in_log_and_output(caplog, capsys):
     # Reassignment pattern: `_it = itasca; _it.command("""...""")` —
     # AST can't prove _it is itasca, so the splitter passes it through.
-    # We should at least leave a DEBUG breadcrumb so future "bridge stalled"
-    # reports have something to grep for.
+    # The diagnostic must be agent-visible: WARNING in the bridge log
+    # (root logger runs at INFO, so DEBUG would be filtered) AND printed
+    # to stdout, which both execution paths redirect into the task/
+    # snippet output before preprocessing.
     import logging
 
     src = '''
@@ -143,14 +145,15 @@ model new
 ball generate radius 0.1 number 10
 """)
 '''
-    with caplog.at_level(logging.DEBUG, logger="itasca-mcp-bridge"):
+    with caplog.at_level(logging.WARNING, logger="itasca-mcp-bridge"):
         out = preprocess_source(src)
 
     # Source unchanged (we don't try to split via reassignment).
     assert "_it.command(" in out
-    # But a diagnostic was logged.
-    debug_msgs = [r.getMessage() for r in caplog.records if r.levelno == logging.DEBUG]
-    assert any("'_it'" in m and "splitter skipped" in m for m in debug_msgs), debug_msgs
+    warn_msgs = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("'_it'" in m and "splitter skipped" in m for m in warn_msgs), warn_msgs
+    printed = capsys.readouterr().out
+    assert "[bridge warning]" in printed and "'_it'" in printed
 
 
 def test_fish_define_block_kept_whole():
@@ -258,7 +261,7 @@ fish define broken
     assert any("without terminating 'end'" in m for m in warnings), warnings
 
 
-def test_unrecognized_single_line_does_not_trigger_diagnostic(caplog):
+def test_unrecognized_single_line_does_not_trigger_diagnostic(caplog, capsys):
     # Don't be noisy: single-line .command() on any receiver isn't a stall risk.
     import logging
 
@@ -266,8 +269,9 @@ def test_unrecognized_single_line_does_not_trigger_diagnostic(caplog):
 other = something
 other.command("just one line")
 '''
-    with caplog.at_level(logging.DEBUG, logger="itasca-mcp-bridge"):
+    with caplog.at_level(logging.WARNING, logger="itasca-mcp-bridge"):
         preprocess_source(src)
 
-    debug_msgs = [r.getMessage() for r in caplog.records if r.levelno == logging.DEBUG]
-    assert not any("splitter skipped" in m for m in debug_msgs), debug_msgs
+    warn_msgs = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert not any("splitter skipped" in m for m in warn_msgs), warn_msgs
+    assert "[bridge warning]" not in capsys.readouterr().out
