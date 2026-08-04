@@ -49,7 +49,7 @@ _FISH_BLOCK_START = re.compile(
 _FISH_BLOCK_END = re.compile(r"^end\s*(?:;.*)?$", re.IGNORECASE)
 
 
-def split_pfc_commands(multiline_str):
+def split_engine_commands(multiline_str):
     # type: (str) -> List[str]
     """Split a multi-line ITASCA command string into individual commands.
 
@@ -223,7 +223,7 @@ def _find_multiline_command_calls(tree, module_aliases, bare_command_aliases):
         if "\n" not in value:
             continue
         # Check it actually has >1 command after splitting
-        commands = split_pfc_commands(value)
+        commands = split_engine_commands(value)
         if len(commands) <= 1:
             continue
         results.append((node, value))
@@ -265,7 +265,7 @@ def _find_unrecognized_multiline_command_calls(tree, module_aliases):
             continue
         # Require >1 actual ITASCA command after splitting — single-line block
         # in triple-quotes isn't risky.
-        if len(split_pfc_commands(value)) <= 1:
+        if len(split_engine_commands(value)) <= 1:
             continue
         findings.append((node, func.value.id))
 
@@ -413,7 +413,7 @@ def preprocess_source(source):
         line_start, line_end = _find_call_range(source_lines, call_node)
 
         # Split ITASCA commands and build replacement
-        commands = split_pfc_commands(cmd_string)
+        commands = split_engine_commands(cmd_string)
         replacement = _build_replacement(call_name, commands, indent)
 
         # Replace the lines

@@ -23,7 +23,7 @@ from ..utils import (
     TaskDataBuilder,
     build_response,
     preprocess_source,
-    capture_pfc_console,
+    capture_engine_console,
 )
 from ..signals import set_current_task, clear_current_task, clear_interrupt, check_interrupt
 
@@ -107,7 +107,7 @@ class ScriptRunner:
             # itasca.command calls, interleaved with Python prints in
             # execution order via the active sys.stdout (TeeBuffer).
             cmdlog_dir = path_utils.logs_dir()
-            with capture_pfc_console(sys.stdout, cmdlog_dir):
+            with capture_engine_console(sys.stdout, cmdlog_dir):
                 # Try to execute as expression first (single line, returns value)
                 try:
                     # Use compile() with script_path for better traceback

@@ -35,7 +35,7 @@ import threading
 import traceback
 from typing import Any, Dict, Optional
 
-from ..utils import TeeBuffer, capture_pfc_console, path_utils, preprocess_source
+from ..utils import TeeBuffer, capture_engine_console, path_utils, preprocess_source
 from ..signals import (
     set_current_task,
     clear_current_task,
@@ -109,7 +109,7 @@ def run_snippet(code, output_buffer, request_id=None):
         code = preprocess_source(code)
 
         cmdlog_dir = path_utils.logs_dir()
-        with capture_pfc_console(sys.stdout, cmdlog_dir):
+        with capture_engine_console(sys.stdout, cmdlog_dir):
             try:
                 code_obj = compile(code, SNIPPET_LABEL, "eval")
                 result = eval(code_obj, exec_globals, exec_globals)

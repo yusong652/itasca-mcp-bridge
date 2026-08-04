@@ -20,7 +20,7 @@ from itasca_mcp_bridge.signals.interrupt import request_interrupt
 
 @pytest.fixture(autouse=True)
 def _isolate_cwd(monkeypatch, tmp_path):
-    # capture_pfc_console creates a logs dir in CWD; keep the repo clean.
+    # capture_engine_console creates a logs dir in CWD; keep the repo clean.
     monkeypatch.chdir(tmp_path)
 
 

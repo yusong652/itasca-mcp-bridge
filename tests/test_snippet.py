@@ -1,7 +1,7 @@
 """Tests for execution.snippet.run_snippet — the shared compile/exec path
 behind both execute_code routes.
 
-Requires the `itasca_stub` fixture because `capture_pfc_console` imports
+Requires the `itasca_stub` fixture because `capture_engine_console` imports
 itasca and pokes its `command` attribute.
 """
 
@@ -23,7 +23,7 @@ from itasca_mcp_bridge.signals.interrupt import (
 
 @pytest.fixture(autouse=True)
 def _isolate_cwd(monkeypatch, tmp_path):
-    # capture_pfc_console creates `.pfc-mcp/logs/` in CWD; redirect so
+    # capture_engine_console creates `.pfc-mcp/logs/` in CWD; redirect so
     # tests don't litter the repo.
     monkeypatch.chdir(tmp_path)
 
@@ -75,7 +75,7 @@ class TestSuccessPath:
         result = run_snippet(code, StringIO())
         assert result["status"] == "success"
         cmds = [c.args[0] for c in itasca_stub.command.call_args_list]
-        # capture_pfc_console issues its own log commands on the same
+        # capture_engine_console issues its own log commands on the same
         # stub, so assert membership rather than exact call list.
         assert "model new" in cmds
         assert "ball create id 1" in cmds

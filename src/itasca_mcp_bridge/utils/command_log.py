@@ -49,12 +49,12 @@ _orig_command = None
 
 
 class _CaptureContext(object):
-    __slots__ = ("log_path", "log_path_pfc", "sink", "in_command")
+    __slots__ = ("log_path", "log_path_engine", "sink", "in_command")
 
     def __init__(self, log_path, sink):
         # type: (str, object) -> None
         self.log_path = log_path
-        self.log_path_pfc = log_path.replace("\\", "/")
+        self.log_path_engine = log_path.replace("\\", "/")
         self.sink = sink
         # True while this scope's wrapped user command is executing —
         # i.e. its log session is live and an inner scope entering now
@@ -116,11 +116,11 @@ def _patched(cmd):
             try:
                 ctx.sink.write(chunk)
             except Exception as e:
-                logger.warning("capture_pfc_console: stdout write failed: %s", e)
+                logger.warning("capture_engine_console: stdout write failed: %s", e)
 
 
 @contextmanager
-def capture_pfc_console(stdout_sink, log_dir):
+def capture_engine_console(stdout_sink, log_dir):
     # type: (object, str) -> object
     """
     Within this block, monkey-patch itasca.command() so each call's ITASCA
@@ -180,7 +180,7 @@ def capture_pfc_console(stdout_sink, log_dir):
     # while the outer one is mid-command ends the outer's live log session;
     # it is resumed on exit below.
     try:
-        _orig_command(f"program log-file '{ctx.log_path_pfc}'")
+        _orig_command(f"program log-file '{ctx.log_path_engine}'")
     except BaseException:
         if not _stack:
             _orig_command = None
@@ -195,7 +195,7 @@ def capture_pfc_console(stdout_sink, log_dir):
         if _stack:
             outer = _stack[-1]
             try:
-                _orig_command(f"program log-file '{outer.log_path_pfc}'")
+                _orig_command(f"program log-file '{outer.log_path_engine}'")
                 if outer.in_command:
                     # Resume the outer session in append mode (no truncate):
                     # its pre-interruption output is still in the file.
@@ -205,7 +205,7 @@ def capture_pfc_console(stdout_sink, log_dir):
                     _orig_command("program log on")
             except Exception as e:
                 logger.warning(
-                    "capture_pfc_console: failed to restore outer log session: %s",
+                    "capture_engine_console: failed to restore outer log session: %s",
                     e,
                 )
         else:

@@ -1,4 +1,4 @@
-"""Tests for utils.command_log.capture_pfc_console — the itasca.command()
+"""Tests for utils.command_log.capture_engine_console — the itasca.command()
 console-output capture, including the nested-scope path (#28).
 
 Uses a fake `itasca` module that simulates the parts of ITASCA's
@@ -17,7 +17,7 @@ from io import StringIO
 
 import pytest
 from itasca_mcp_bridge.utils import command_log
-from itasca_mcp_bridge.utils.command_log import capture_pfc_console
+from itasca_mcp_bridge.utils.command_log import capture_engine_console
 
 
 class FakeItascaLog:
@@ -104,7 +104,7 @@ class TestSingleScope:
         fake_itasca.outputs["ball list"] = "  Ball  Radius\n     1  0.25\n"
         sink = StringIO()
 
-        with capture_pfc_console(sink, str(tmp_path)):
+        with capture_engine_console(sink, str(tmp_path)):
             import itasca
 
             itasca.command("ball list")
@@ -113,7 +113,7 @@ class TestSingleScope:
         assert "1  0.25" in sink.getvalue()
 
     def test_patch_restored_and_stack_empty_after_exit(self, fake_itasca, tmp_path):
-        with capture_pfc_console(StringIO(), str(tmp_path)):
+        with capture_engine_console(StringIO(), str(tmp_path)):
             import itasca
 
             assert itasca.command is command_log._patched
@@ -138,7 +138,7 @@ class TestSingleScope:
         sys.modules["itasca"].command = exploding
 
         with pytest.raises(ValueError):
-            with capture_pfc_console(StringIO(), str(tmp_path)):
+            with capture_engine_console(StringIO(), str(tmp_path)):
                 import itasca
 
                 itasca.command("bad command")
@@ -162,14 +162,14 @@ class TestNestedScope:
         outer_sink, inner_sink = StringIO(), StringIO()
 
         def snippet_at_cycle_gap():
-            with capture_pfc_console(inner_sink, str(tmp_path)):
+            with capture_engine_console(inner_sink, str(tmp_path)):
                 import itasca
 
                 itasca.command("ball list")
 
         fake_itasca.cycle_hook = snippet_at_cycle_gap
 
-        with capture_pfc_console(outer_sink, str(tmp_path)):
+        with capture_engine_console(outer_sink, str(tmp_path)):
             import itasca
 
             itasca.command("model cycle 100")
@@ -187,7 +187,7 @@ class TestNestedScope:
         restored_paths = []
 
         def snippet_at_cycle_gap():
-            with capture_pfc_console(StringIO(), str(tmp_path)):
+            with capture_engine_console(StringIO(), str(tmp_path)):
                 import itasca
 
                 itasca.command("ball list")
@@ -195,7 +195,7 @@ class TestNestedScope:
 
         fake_itasca.cycle_hook = snippet_at_cycle_gap
 
-        with capture_pfc_console(outer_sink, str(tmp_path)):
+        with capture_engine_console(outer_sink, str(tmp_path)):
             import itasca
 
             itasca.command("model cycle 100")
@@ -231,7 +231,7 @@ class TestNestedScope:
 
         def snippet_at_cycle_gap():
             hook_start = len(issued)
-            with capture_pfc_console(StringIO(), str(tmp_path)):
+            with capture_engine_console(StringIO(), str(tmp_path)):
                 import itasca
 
                 itasca.command("ball list")
@@ -239,7 +239,7 @@ class TestNestedScope:
 
         fake_itasca.cycle_hook = snippet_at_cycle_gap
 
-        with capture_pfc_console(StringIO(), str(tmp_path)):
+        with capture_engine_console(StringIO(), str(tmp_path)):
             import itasca
 
             itasca.command("model cycle 100")
@@ -260,14 +260,14 @@ class TestNestedScope:
         outer_sink, inner_sink = StringIO(), StringIO()
 
         def snippet_at_cycle_gap():
-            with capture_pfc_console(inner_sink, str(tmp_path)):
+            with capture_engine_console(inner_sink, str(tmp_path)):
                 import itasca
 
                 itasca.command("ball list")
 
         fake_itasca.cycle_hook = snippet_at_cycle_gap
 
-        with capture_pfc_console(outer_sink, str(tmp_path)):
+        with capture_engine_console(outer_sink, str(tmp_path)):
             import itasca
 
             itasca.command("model cycle 100")
@@ -279,7 +279,7 @@ class TestNestedScope:
         states = {}
 
         def snippet_at_cycle_gap():
-            with capture_pfc_console(StringIO(), str(tmp_path)):
+            with capture_engine_console(StringIO(), str(tmp_path)):
                 pass
             import itasca
 
@@ -290,7 +290,7 @@ class TestNestedScope:
 
         fake_itasca.cycle_hook = snippet_at_cycle_gap
 
-        with capture_pfc_console(StringIO(), str(tmp_path)):
+        with capture_engine_console(StringIO(), str(tmp_path)):
             import itasca
 
             itasca.command("model cycle 100")

@@ -5,7 +5,7 @@ deployed inside PFC GUI's embedded Python), so we put `src/` on sys.path
 to make `import itasca_mcp_bridge.*` work from these tests.
 
 Tests that exercise code paths reaching `import itasca` (run_snippet via
-capture_pfc_console) request the `itasca_stub` fixture, which installs a
+capture_engine_console) request the `itasca_stub` fixture, which installs a
 MagicMock under that name for the duration of the test.
 """
 
@@ -26,7 +26,7 @@ if str(_BRIDGE_SRC) not in sys.path:
 def itasca_stub():
     """Install a MagicMock for the `itasca` module.
 
-    `capture_pfc_console` does `import itasca` and immediately calls
+    `capture_engine_console` does `import itasca` and immediately calls
     `itasca.command(...)` to set the log-file path; a MagicMock accepts
     arbitrary attribute access and calls, so the snippet path can run
     end-to-end without a real PFC GUI behind it.
