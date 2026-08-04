@@ -1,17 +1,32 @@
 """Tests for utils.command_splitter.preprocess_script.
 
-The splitter exists to break multi-line `itasca.command()` calls into
-one call per command so the PFC C extension releases the GIL between
-sub-commands. A blind spot in alias detection caused real-world scripts
-that use `import itasca as it` to skip splitting entirely, which is
-how the bridge wedged on first reproduction of the deadlock bug.
+The splitter breaks multi-line `itasca.command()` calls into one call
+per command so the bridge's callback re-registration hook (which runs at
+command-call boundaries) can repair the engine callback registry after
+`model new`/`model restore` — see the command_splitter module docstring.
+A blind spot in alias detection caused real-world scripts that use
+`import itasca as it` to skip splitting entirely, which is how the
+bridge wedged on first reproduction of the deadlock bug.
 
-These tests pin alias coverage so the regression can't recur.
+FISH definition blocks are the exception: they must survive splitting as
+ONE multi-line command, because a lone `fish define <name>` drops the
+console into interactive FISH mode and wedges the bridge.
+
+These tests pin alias coverage and block preservation so the regressions
+can't recur.
 """
 
 from __future__ import annotations
 
+import ast
+
 from itasca_mcp_bridge.utils.command_splitter import preprocess_script
+
+
+def _call_arg(call_line: str, call_name: str) -> str:
+    """Extract the string-literal argument from a generated call line."""
+    inner = call_line[len(call_name) + 1 : -1]
+    return ast.literal_eval(inner)
 
 
 def _call_lines(src: str, call_name: str) -> list[str]:
@@ -136,6 +151,111 @@ ball generate radius 0.1 number 10
     # But a diagnostic was logged.
     debug_msgs = [r.getMessage() for r in caplog.records if r.levelno == logging.DEBUG]
     assert any("'_it'" in m and "splitter skipped" in m for m in debug_msgs), debug_msgs
+
+
+def test_fish_define_block_kept_whole():
+    # The original wedge: line-splitting `fish define ... end` sent the
+    # define alone and left the console waiting at the Fish> prompt.
+    src = '''
+import itasca as it
+
+it.command("""
+model new
+fish define probe
+    global probe_value
+    probe_value = 314159
+end
+model cycle 100
+""")
+'''
+    out = preprocess_script(src)
+    ast.parse(out)  # generated source must be valid Python
+    calls = _call_lines(out, "it.command")
+    assert len(calls) == 3
+    block = _call_arg(calls[1], "it.command")
+    body = block.split("\n")
+    assert body[0] == "fish define probe"
+    assert body[-1] == "end"
+    assert "probe_value = 314159" in block
+
+
+def test_fish_operator_block_kept_whole():
+    src = '''
+import itasca
+
+itasca.command("""
+model new
+fish operator par_op(a)
+end
+model cycle 10
+""")
+'''
+    out = preprocess_script(src)
+    calls = _call_lines(out, "itasca.command")
+    assert len(calls) == 3
+    block = _call_arg(calls[1], "itasca.command")
+    assert block.split("\n")[0] == "fish operator par_op(a)"
+
+
+def test_legacy_bare_define_block_kept_whole():
+    # PFC 5-era scripts use bare `define ... end`; still accepted by
+    # newer engines, so the block detection must cover it.
+    src = '''
+import itasca
+
+itasca.command("""
+model new
+define legacy_fn
+    legacy_fn = 1
+End
+""")
+'''
+    out = preprocess_script(src)
+    calls = _call_lines(out, "itasca.command")
+    assert len(calls) == 2
+    block = _call_arg(calls[1], "itasca.command")
+    assert block.split("\n")[0] == "define legacy_fn"
+    # `End` terminator matched case-insensitively and kept verbatim
+    assert block.split("\n")[-1] == "End"
+
+
+def test_fish_block_only_call_is_left_unchanged():
+    # A call containing ONLY one definition block has nothing to split;
+    # the whole call passes through untouched (unsplit blocks work fine).
+    src = '''
+import itasca
+
+itasca.command("""
+fish define solo
+    solo = 1
+end
+""")
+'''
+    out = preprocess_script(src)
+    assert out == src
+
+
+def test_unterminated_fish_block_passes_through_with_warning(caplog):
+    import logging
+
+    src = '''
+import itasca
+
+itasca.command("""
+model new
+fish define broken
+    broken = 1
+""")
+'''
+    with caplog.at_level(logging.WARNING, logger="itasca-mcp-bridge"):
+        out = preprocess_script(src)
+
+    calls = _call_lines(out, "itasca.command")
+    assert len(calls) == 2
+    block = _call_arg(calls[1], "itasca.command")
+    assert block.split("\n")[0] == "fish define broken"
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("without terminating 'end'" in m for m in warnings), warnings
 
 
 def test_unrecognized_single_line_does_not_trigger_diagnostic(caplog):

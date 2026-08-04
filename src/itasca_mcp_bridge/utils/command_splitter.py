@@ -1,12 +1,30 @@
 """
 Command Splitter - Preprocess scripts to split multi-line itasca.command() calls.
 
-When itasca.command() receives a multi-line string containing multiple ITASCA
-commands, the ITASCA C extension holds the GIL for the entire batch, blocking
-all other Python threads (including the Bridge HTTP server threads).
+Why one command per call matters (verified live on PFC 6.00.030, 2026-08-04):
 
-This module transforms such calls into individual itasca.command() calls,
-allowing the GIL to be released between commands.
+- The bridge's busy-time reachability (status polls, execute_code
+  interleave, interrupt) comes entirely from the cycle callbacks
+  registered via ``itasca.set_callback`` — the engine's C code never
+  releases the GIL to other threads on its own.
+- ``model new`` / ``model restore`` clear the engine's callback registry.
+  The bridge re-registers them via a wrapper around ``itasca.command``
+  (see ``signals.interrupt``), but that repair can only run AFTER a
+  command call returns.
+- A multi-line batch containing ``model new`` followed by ``model cycle``
+  therefore wipes the registry mid-call and cycles with no callbacks at
+  all: the bridge is unreachable and uninterruptible for the whole call.
+  Splitting aligns command boundaries with the re-registration hook.
+  Any engine whose model-reset commands clear the registry is affected,
+  not just PFC 6.
+
+FISH definition blocks (``fish define`` / ``fish operator`` / legacy bare
+``define`` ... ``end``) are the exception and must be kept whole: sending
+``fish define <name>`` on its own drops the console into interactive FISH
+mode and the C call blocks holding the GIL waiting for the function body —
+a total bridge wedge. Definition blocks execute instantly (the body runs
+at call time, not define time), so keeping them as one multi-line command
+is safe.
 
 Python 3.6 compatible implementation.
 """
@@ -20,6 +38,17 @@ from typing import List, Optional, Tuple
 logger = logging.getLogger("itasca-mcp-bridge")
 
 
+# Start of a FISH definition block: `fish define` / `fish operator`
+# (abbreviations allowed, e.g. `fish def`) or the legacy bare `define`.
+_FISH_BLOCK_START = re.compile(
+    r"^(?:fish\s+(?:def\w*|oper\w*)|def\w*)\b", re.IGNORECASE
+)
+# End of a FISH definition block: a standalone `end` (optionally followed
+# by a comment). Nested control blocks close with `endif`/`endloop`/
+# `endsection`, so a bare `end` always terminates the definition.
+_FISH_BLOCK_END = re.compile(r"^end\s*(?:;.*)?$", re.IGNORECASE)
+
+
 def split_pfc_commands(multiline_str):
     # type: (str) -> List[str]
     """Split a multi-line ITASCA command string into individual commands.
@@ -29,6 +58,13 @@ def split_pfc_commands(multiline_str):
     - ITASCA line continuation with '...' at end of line
     - ITASCA comments starting with ';'
     - Empty/whitespace-only lines
+    - FISH definition blocks (`fish define`/`fish operator`/legacy bare
+      `define` ... `end`): kept whole as ONE multi-line command, body
+      lines verbatim. Splitting a definition line-by-line would leave the
+      console in interactive FISH mode with the C call blocked waiting
+      for input (see module docstring). An unterminated block (no `end`)
+      is emitted as-is — it is equally broken unsplit, and the engine's
+      error message is clearer than anything we could synthesize.
 
     Args:
         multiline_str: Multi-line ITASCA command string
@@ -39,12 +75,29 @@ def split_pfc_commands(multiline_str):
     lines = multiline_str.split("\n")
     commands = []
     current = []  # type: List[str]
+    block_lines = []  # type: List[str]
+    in_block = False
 
     for line in lines:
         stripped = line.strip()
 
+        if in_block:
+            # Keep body lines verbatim (minus trailing whitespace): the
+            # engine parses comments/continuations inside the block itself.
+            block_lines.append(line.rstrip())
+            if _FISH_BLOCK_END.match(stripped):
+                commands.append("\n".join(block_lines))
+                block_lines = []
+                in_block = False
+            continue
+
         # Skip empty lines and pure comment lines
         if not stripped or stripped.startswith(";"):
+            continue
+
+        if _FISH_BLOCK_START.match(stripped):
+            in_block = True
+            block_lines = [stripped]
             continue
 
         # Check for ITASCA line continuation (... at end)
@@ -65,6 +118,15 @@ def split_pfc_commands(multiline_str):
         joined = " ".join(current)
         if joined.strip():
             commands.append(joined.strip())
+
+    # Flush an unterminated FISH block (missing `end`): pass it through
+    # unchanged so the engine reports the real error.
+    if in_block and block_lines:
+        logger.warning(
+            "FISH definition block without terminating 'end' in "
+            "multi-line command; passing through unsplit"
+        )
+        commands.append("\n".join(block_lines))
 
     return commands
 
@@ -286,8 +348,11 @@ def _build_replacement(call_name, commands, indent):
     """
     lines = []
     for cmd in commands:
-        # Escape any single quotes in the command
-        escaped = cmd.replace("\\", "\\\\").replace('"', '\\"')
+        # Escape backslashes, quotes, and newlines (FISH definition blocks
+        # are emitted as one multi-line command) for the string literal.
+        escaped = (
+            cmd.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+        )
         lines.append('{}{}("{}")'.format(indent, call_name, escaped))
     return "\n".join(lines)
 
