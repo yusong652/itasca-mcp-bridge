@@ -22,10 +22,10 @@ from ..utils import (
     TeeBuffer,
     TaskDataBuilder,
     build_response,
-    preprocess_script,
-    capture_pfc_console,
+    preprocess_source,
+    capture_engine_console,
 )
-from ..signals import set_current_task, clear_current_task, clear_interrupt
+from ..signals import set_current_task, clear_current_task, clear_interrupt, check_interrupt
 
 # Module logger
 logger = logging.getLogger("itasca-mcp-bridge")
@@ -101,13 +101,13 @@ class ScriptRunner:
 
             # Split multi-line itasca.command() calls into individual calls
             # to prevent GIL being held for the entire batch.
-            script_content = preprocess_script(script_content)
+            script_content = preprocess_source(script_content)
 
             # Capture ITASCA console output (table dumps, list output) from
             # itasca.command calls, interleaved with Python prints in
             # execution order via the active sys.stdout (TeeBuffer).
             cmdlog_dir = path_utils.logs_dir()
-            with capture_pfc_console(sys.stdout, cmdlog_dir):
+            with capture_engine_console(sys.stdout, cmdlog_dir):
                 # Try to execute as expression first (single line, returns value)
                 try:
                     # Use compile() with script_path for better traceback
@@ -170,6 +170,25 @@ class ScriptRunner:
                         "result": None,
                         "output": output_text,
                     }
+
+            # Engine-agnostic fallback: PFC 6 wraps the callback's
+            # InterruptedError in an opaque RuntimeError ("Error in
+            # execution - See the Itasca Console...") with no trace of
+            # the original exception, so string matching can't identify
+            # it. The task's interrupt flag is still set at this point
+            # (cleared in the finally below): a pending request for this
+            # task means the abort WAS the interruption, regardless of
+            # how the engine wrapped it.
+            if check_interrupt(task_id):
+                logger.info(
+                    "Script interrupted (flag set, engine-wrapped): {}".format(script_path)
+                )
+                return {
+                    "status": "interrupted",
+                    "message": "Script interrupted by user",
+                    "result": None,
+                    "output": output_text,
+                }
 
             # Capture complete stack trace for server logging (debugging)
             full_traceback = traceback.format_exc()

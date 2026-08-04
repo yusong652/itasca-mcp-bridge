@@ -125,3 +125,66 @@ class TestExecThreadRegistry:
         register_exec_thread("live-req", threading.get_ident())
         assert get_exec_thread("stale-req") is None
         assert get_exec_thread("live-req") == threading.get_ident()
+
+
+class _FakeItasca:
+    """Minimal itasca module stand-in for _wrapped_command tests."""
+
+    def __init__(self):
+        self.set_calls: list[tuple[str, float]] = []
+        self.commands: list[str] = []
+
+    def set_callback(self, name, position):
+        self.set_calls.append((name, position))
+
+    def remove_callback(self, name, position):
+        pass
+
+    def command(self, cmd):
+        self.commands.append(cmd)
+
+
+class TestModelResetReRegistration:
+    """The _wrapped_command hook must re-register the cycle callbacks
+    after any command call that contains `model new`/`model restore` —
+    those clear the engine's callback registry, killing the bridge's
+    busy-time reachability and interrupt support."""
+
+    @staticmethod
+    def _interrupt_registrations(fake: _FakeItasca) -> int:
+        return sum(1 for name, _ in fake.set_calls if name == "_pfc_interrupt_check")
+
+    def _registered_fake(self) -> _FakeItasca:
+        from itasca_mcp_bridge.signals.interrupt import register_interrupt_callback
+
+        fake = _FakeItasca()
+        assert register_interrupt_callback(fake) is True
+        return fake
+
+    def test_non_reset_command_does_not_re_register(self):
+        fake = self._registered_fake()
+        base = self._interrupt_registrations(fake)
+        fake.command("model cycle 100")
+        assert self._interrupt_registrations(fake) == base
+
+    def test_single_line_reset_re_registers(self):
+        fake = self._registered_fake()
+        base = self._interrupt_registrations(fake)
+        fake.command("model new")
+        assert self._interrupt_registrations(fake) == base + 1
+
+    def test_mid_string_reset_re_registers(self):
+        # The execute_code path is not split by the command splitter, so
+        # a reset command can sit mid-string in a multi-line batch. A
+        # whole-string startswith check used to miss it, leaving the
+        # registry dead until some later first-line match.
+        fake = self._registered_fake()
+        base = self._interrupt_registrations(fake)
+        fake.command("ball delete\nmodel new\nball generate radius 0.1 number 5")
+        assert self._interrupt_registrations(fake) == base + 1
+
+    def test_model_restore_also_re_registers(self):
+        fake = self._registered_fake()
+        base = self._interrupt_registrations(fake)
+        fake.command("plot clear\nmodel restore 'sample.p3sav'")
+        assert self._interrupt_registrations(fake) == base + 1

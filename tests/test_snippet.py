@@ -1,7 +1,7 @@
 """Tests for execution.snippet.run_snippet — the shared compile/exec path
 behind both execute_code routes.
 
-Requires the `itasca_stub` fixture because `capture_pfc_console` imports
+Requires the `itasca_stub` fixture because `capture_engine_console` imports
 itasca and pokes its `command` attribute.
 """
 
@@ -23,7 +23,7 @@ from itasca_mcp_bridge.signals.interrupt import (
 
 @pytest.fixture(autouse=True)
 def _isolate_cwd(monkeypatch, tmp_path):
-    # capture_pfc_console creates `.pfc-mcp/logs/` in CWD; redirect so
+    # capture_engine_console creates `.pfc-mcp/logs/` in CWD; redirect so
     # tests don't litter the repo.
     monkeypatch.chdir(tmp_path)
 
@@ -65,6 +65,21 @@ class TestSuccessPath:
         result = run_snippet("print('hello')", buf)
         assert result["status"] == "success"
         assert "hello" in result["output"]
+
+    def test_multiline_command_call_is_split(self, itasca_stub):
+        # The snippet path shares the command splitter with the task
+        # path: a multi-line itasca.command() batch must reach the
+        # engine as one call per command, so the callback-registry
+        # repair hook can run between them (e.g. after `model new`).
+        code = 'import itasca\nitasca.command("""\nmodel new\nball create id 1\n""")'
+        result = run_snippet(code, StringIO())
+        assert result["status"] == "success"
+        cmds = [c.args[0] for c in itasca_stub.command.call_args_list]
+        # capture_engine_console issues its own log commands on the same
+        # stub, so assert membership rather than exact call list.
+        assert "model new" in cmds
+        assert "ball create id 1" in cmds
+        assert not any("model new" in c and "ball create" in c for c in cmds)
 
 
 class TestErrorPath:

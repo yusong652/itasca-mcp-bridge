@@ -1,4 +1,4 @@
-"""Tests for utils.command_log.capture_pfc_console — the itasca.command()
+"""Tests for utils.command_log.capture_engine_console — the itasca.command()
 console-output capture, including the nested-scope path (#28).
 
 Uses a fake `itasca` module that simulates the parts of ITASCA's
@@ -17,7 +17,7 @@ from io import StringIO
 
 import pytest
 from itasca_mcp_bridge.utils import command_log
-from itasca_mcp_bridge.utils.command_log import capture_pfc_console
+from itasca_mcp_bridge.utils.command_log import capture_engine_console
 
 
 class FakeItascaLog:
@@ -104,7 +104,7 @@ class TestSingleScope:
         fake_itasca.outputs["ball list"] = "  Ball  Radius\n     1  0.25\n"
         sink = StringIO()
 
-        with capture_pfc_console(sink, str(tmp_path)):
+        with capture_engine_console(sink, str(tmp_path)):
             import itasca
 
             itasca.command("ball list")
@@ -113,7 +113,7 @@ class TestSingleScope:
         assert "1  0.25" in sink.getvalue()
 
     def test_patch_restored_and_stack_empty_after_exit(self, fake_itasca, tmp_path):
-        with capture_pfc_console(StringIO(), str(tmp_path)):
+        with capture_engine_console(StringIO(), str(tmp_path)):
             import itasca
 
             assert itasca.command is command_log._patched
@@ -138,7 +138,7 @@ class TestSingleScope:
         sys.modules["itasca"].command = exploding
 
         with pytest.raises(ValueError):
-            with capture_pfc_console(StringIO(), str(tmp_path)):
+            with capture_engine_console(StringIO(), str(tmp_path)):
                 import itasca
 
                 itasca.command("bad command")
@@ -162,14 +162,14 @@ class TestNestedScope:
         outer_sink, inner_sink = StringIO(), StringIO()
 
         def snippet_at_cycle_gap():
-            with capture_pfc_console(inner_sink, str(tmp_path)):
+            with capture_engine_console(inner_sink, str(tmp_path)):
                 import itasca
 
                 itasca.command("ball list")
 
         fake_itasca.cycle_hook = snippet_at_cycle_gap
 
-        with capture_pfc_console(outer_sink, str(tmp_path)):
+        with capture_engine_console(outer_sink, str(tmp_path)):
             import itasca
 
             itasca.command("model cycle 100")
@@ -187,7 +187,7 @@ class TestNestedScope:
         restored_paths = []
 
         def snippet_at_cycle_gap():
-            with capture_pfc_console(StringIO(), str(tmp_path)):
+            with capture_engine_console(StringIO(), str(tmp_path)):
                 import itasca
 
                 itasca.command("ball list")
@@ -195,7 +195,7 @@ class TestNestedScope:
 
         fake_itasca.cycle_hook = snippet_at_cycle_gap
 
-        with capture_pfc_console(outer_sink, str(tmp_path)):
+        with capture_engine_console(outer_sink, str(tmp_path)):
             import itasca
 
             itasca.command("model cycle 100")
@@ -208,19 +208,66 @@ class TestNestedScope:
         assert "cmdtmp_" in restored_paths[0]
         assert fake_itasca.logging is False  # outer's log off ran at the end
 
+    def test_no_show_message_keyword_inside_cycle_callback(self, fake_itasca, tmp_path):
+        # PFC 6 does not know `show-message` and complains — and a
+        # command complaint raised inside the cycle callback silently
+        # aborts the outer task's running `model cycle` (the engine
+        # stops at the interleave cycle with no "cycle limit met").
+        # Every capture command that executes in the callback — the
+        # inner scope's per-command wrap AND the outer-session resume —
+        # must therefore stay keyword-free. Outside the callback the
+        # keyword stays (it suppresses GUI console banners on 7/9).
+        import itasca as fake_module
+
+        issued = []
+        in_hook = []
+        delegate = fake_module.command
+
+        def recording_command(cmd):
+            issued.append(cmd)
+            delegate(cmd)
+
+        fake_module.command = recording_command
+
+        def snippet_at_cycle_gap():
+            hook_start = len(issued)
+            with capture_engine_console(StringIO(), str(tmp_path)):
+                import itasca
+
+                itasca.command("ball list")
+            in_hook.extend(issued[hook_start:])
+
+        fake_itasca.cycle_hook = snippet_at_cycle_gap
+
+        with capture_engine_console(StringIO(), str(tmp_path)):
+            import itasca
+
+            itasca.command("model cycle 100")
+
+        # Everything issued from inside the cycle callback is keyword-free.
+        assert in_hook, issued
+        assert all("show-message" not in c for c in in_hook), in_hook
+        # The resume of the outer live session ran (append mode: no truncate).
+        assert any(
+            c.startswith("program log on") and "truncate" not in c for c in in_hook
+        ), in_hook
+        # The outer scope's own wrap (sequential context) keeps the keyword.
+        outside = [c for c in issued if c not in in_hook]
+        assert any("show-message off" in c for c in outside), outside
+
     def test_inner_output_does_not_leak_into_outer_sink(self, fake_itasca, tmp_path):
         fake_itasca.outputs["ball list"] = "inner-only table\n"
         outer_sink, inner_sink = StringIO(), StringIO()
 
         def snippet_at_cycle_gap():
-            with capture_pfc_console(inner_sink, str(tmp_path)):
+            with capture_engine_console(inner_sink, str(tmp_path)):
                 import itasca
 
                 itasca.command("ball list")
 
         fake_itasca.cycle_hook = snippet_at_cycle_gap
 
-        with capture_pfc_console(outer_sink, str(tmp_path)):
+        with capture_engine_console(outer_sink, str(tmp_path)):
             import itasca
 
             itasca.command("model cycle 100")
@@ -232,7 +279,7 @@ class TestNestedScope:
         states = {}
 
         def snippet_at_cycle_gap():
-            with capture_pfc_console(StringIO(), str(tmp_path)):
+            with capture_engine_console(StringIO(), str(tmp_path)):
                 pass
             import itasca
 
@@ -243,7 +290,7 @@ class TestNestedScope:
 
         fake_itasca.cycle_hook = snippet_at_cycle_gap
 
-        with capture_pfc_console(StringIO(), str(tmp_path)):
+        with capture_engine_console(StringIO(), str(tmp_path)):
             import itasca
 
             itasca.command("model cycle 100")

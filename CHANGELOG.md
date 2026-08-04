@@ -4,6 +4,63 @@ All notable changes to `itasca-mcp-bridge` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.4] - 2026-08-05
+
+### Fixed
+- FISH definition blocks inside multi-line `itasca.command()` calls no
+  longer wedge async tasks. The command splitter split such calls line
+  by line, so `fish define <name>` reached the engine alone — the
+  console dropped into interactive FISH mode and the call blocked
+  holding the GIL waiting for the function body, leaving the whole
+  bridge unreachable until someone typed `end` in the GUI. `fish
+  define` / `fish operator` / legacy bare `define` ... `end` blocks are
+  now kept whole as one multi-line command (definitions execute
+  instantly, so nothing is lost by not splitting them).
+- A `model new` / `model restore` sitting mid-string in a multi-line
+  command no longer leaves the engine's cycle-callback registry dead.
+  Those commands clear the registry (killing status polls,
+  `execute_code` interleaving, and interrupt — all of which ride on the
+  bridge's cycle callbacks); the re-registration hook only checked the
+  start of the command string, so a mid-string reset was never
+  repaired. The hook now scans every line.
+- `execute_code` snippets get the same multi-line command splitting as
+  task scripts. Unsplit batches run as one C call, so an embedded
+  `model new` wiped the callback registry with no repair until the
+  whole batch — including any subsequent cycling — finished with the
+  bridge unreachable and the timeout unable to inject. Verified on
+  PFC 6 and PFC 7 alike: the behaviour is engine-independent.
+- Interrupting a task now reports `interrupted` on every engine.
+  PFC 6 wraps the callback-raised `InterruptedError` in an opaque
+  `RuntimeError` that the string-matching classifier (tuned to
+  PFC 7's `ValueError` wrapping) missed, so a successful interrupt
+  came back as `failed`. Classification now falls back to the task's
+  still-pending interrupt flag, which identifies the abort regardless
+  of how the engine wrapped it.
+- A live `execute_code` during a cycling task no longer silently stops
+  the run on PFC 6. The console-capture machinery resumed the task's
+  log session with `program log on show-message off` from inside the
+  cycle callback; PFC 6 does not know the `show-message` keyword, and
+  a command complaint raised in the callback makes it abort the
+  running `model cycle` (stopping at the interleave point with no
+  "cycle limit met"). Capture commands that execute in the callback
+  now omit the keyword; sequential-context commands keep it so GUI
+  console banners stay suppressed on engines that support it.
+- The splitter's diagnostic for multi-line `.command()` calls on
+  receivers it cannot prove alias itasca (e.g. `_it = itasca`) was
+  logged at DEBUG — below the root logger's INFO level, so it appeared
+  nowhere. It is now a WARNING and is also printed into the task or
+  snippet output, where the submitting agent actually reads, with a
+  hint to call `itasca.command` via its import name.
+
+### Changed
+- Internal names finished migrating off the pfc-mcp-bridge era:
+  `preprocess_script` → `preprocess_source` (it now serves both the
+  script and snippet paths), `capture_pfc_console` →
+  `capture_engine_console`, `split_pfc_commands` →
+  `split_engine_commands`. The engine-registered callback names are
+  deliberately unchanged (renaming them would strand mid-session
+  self-upgrades with stale registrations).
+
 ## [0.4.3] - 2026-07-09
 
 ### Fixed
