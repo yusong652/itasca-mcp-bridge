@@ -44,6 +44,13 @@ ANNOUNCEMENTS = {
         "The upgrade-failed hint now prints the product Python's full path -- "
         "a plain 'python' would install into the system interpreter instead.",
     ),
+    "0.4.4": (
+        "Multi-line itasca.command() batches are now safe end-to-end: FISH "
+        "define blocks survive splitting, and a mid-batch 'model new' no "
+        "longer leaves the bridge unreachable or tasks uninterruptible.",
+        "PFC 6: interrupting a task now reports 'interrupted' (was 'failed'), "
+        "and a live execute_code during cycling no longer silently stops the run.",
+    ),
 }
 
 
