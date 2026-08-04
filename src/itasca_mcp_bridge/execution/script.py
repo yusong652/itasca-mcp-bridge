@@ -25,7 +25,7 @@ from ..utils import (
     preprocess_source,
     capture_pfc_console,
 )
-from ..signals import set_current_task, clear_current_task, clear_interrupt
+from ..signals import set_current_task, clear_current_task, clear_interrupt, check_interrupt
 
 # Module logger
 logger = logging.getLogger("itasca-mcp-bridge")
@@ -170,6 +170,25 @@ class ScriptRunner:
                         "result": None,
                         "output": output_text,
                     }
+
+            # Engine-agnostic fallback: PFC 6 wraps the callback's
+            # InterruptedError in an opaque RuntimeError ("Error in
+            # execution - See the Itasca Console...") with no trace of
+            # the original exception, so string matching can't identify
+            # it. The task's interrupt flag is still set at this point
+            # (cleared in the finally below): a pending request for this
+            # task means the abort WAS the interruption, regardless of
+            # how the engine wrapped it.
+            if check_interrupt(task_id):
+                logger.info(
+                    "Script interrupted (flag set, engine-wrapped): {}".format(script_path)
+                )
+                return {
+                    "status": "interrupted",
+                    "message": "Script interrupted by user",
+                    "result": None,
+                    "output": output_text,
+                }
 
             # Capture complete stack trace for server logging (debugging)
             full_traceback = traceback.format_exc()
