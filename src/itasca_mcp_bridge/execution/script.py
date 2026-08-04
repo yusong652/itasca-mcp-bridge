@@ -22,7 +22,7 @@ from ..utils import (
     TeeBuffer,
     TaskDataBuilder,
     build_response,
-    preprocess_script,
+    preprocess_source,
     capture_pfc_console,
 )
 from ..signals import set_current_task, clear_current_task, clear_interrupt
@@ -101,7 +101,7 @@ class ScriptRunner:
 
             # Split multi-line itasca.command() calls into individual calls
             # to prevent GIL being held for the entire batch.
-            script_content = preprocess_script(script_content)
+            script_content = preprocess_source(script_content)
 
             # Capture ITASCA console output (table dumps, list output) from
             # itasca.command calls, interleaved with Python prints in

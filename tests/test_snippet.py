@@ -66,6 +66,21 @@ class TestSuccessPath:
         assert result["status"] == "success"
         assert "hello" in result["output"]
 
+    def test_multiline_command_call_is_split(self, itasca_stub):
+        # The snippet path shares the command splitter with the task
+        # path: a multi-line itasca.command() batch must reach the
+        # engine as one call per command, so the callback-registry
+        # repair hook can run between them (e.g. after `model new`).
+        code = 'import itasca\nitasca.command("""\nmodel new\nball create id 1\n""")'
+        result = run_snippet(code, StringIO())
+        assert result["status"] == "success"
+        cmds = [c.args[0] for c in itasca_stub.command.call_args_list]
+        # capture_pfc_console issues its own log commands on the same
+        # stub, so assert membership rather than exact call list.
+        assert "model new" in cmds
+        assert "ball create id 1" in cmds
+        assert not any("model new" in c and "ball create" in c for c in cmds)
+
 
 class TestErrorPath:
     def test_runtime_error_traceback_filtered_to_user_frames(self, itasca_stub):

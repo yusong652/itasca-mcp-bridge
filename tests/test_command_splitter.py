@@ -1,4 +1,4 @@
-"""Tests for utils.command_splitter.preprocess_script.
+"""Tests for utils.command_splitter.preprocess_source.
 
 The splitter breaks multi-line `itasca.command()` calls into one call
 per command so the bridge's callback re-registration hook (which runs at
@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import ast
 
-from itasca_mcp_bridge.utils.command_splitter import preprocess_script
+from itasca_mcp_bridge.utils.command_splitter import preprocess_source
 
 
 def _call_arg(call_line: str, call_name: str) -> str:
@@ -44,7 +44,7 @@ model new
 model domain extent -1 1 -1 1 -1 1
 """)
 '''
-    out = preprocess_script(src)
+    out = preprocess_source(src)
     assert len(_call_lines(out, "itasca.command")) == 2
 
 
@@ -60,7 +60,7 @@ model domain extent -1 1 -1 1 -1 1
 ball generate radius 0.1 number 10
 """)
 '''
-    out = preprocess_script(src)
+    out = preprocess_source(src)
     assert len(_call_lines(out, "it.command")) == 3
 
 
@@ -73,7 +73,7 @@ model new
 model domain extent -1 1 -1 1 -1 1
 """)
 '''
-    out = preprocess_script(src)
+    out = preprocess_source(src)
     assert len(_call_lines(out, "command")) == 2
 
 
@@ -86,7 +86,7 @@ model new
 model domain extent -1 1 -1 1 -1 1
 """)
 '''
-    out = preprocess_script(src)
+    out = preprocess_source(src)
     assert len(_call_lines(out, "cmd")) == 2
 
 
@@ -95,7 +95,7 @@ def test_single_command_is_not_split():
 import itasca as it
 it.command("model cycle 10000")
 '''
-    out = preprocess_script(src)
+    out = preprocess_source(src)
     # Source unchanged
     assert out == src
 
@@ -109,7 +109,7 @@ model new
 ball generate radius 0.1 number 10
 """)
 '''
-    out = preprocess_script(src)
+    out = preprocess_source(src)
     assert len(_call_lines(out, "itasca.command")) == 2
 
 
@@ -123,7 +123,7 @@ multiline content
 that is not pfc
 """)
 '''
-    out = preprocess_script(src)
+    out = preprocess_source(src)
     # Source unchanged — the call shouldn't be split.
     assert out == src
 
@@ -144,7 +144,7 @@ ball generate radius 0.1 number 10
 """)
 '''
     with caplog.at_level(logging.DEBUG, logger="itasca-mcp-bridge"):
-        out = preprocess_script(src)
+        out = preprocess_source(src)
 
     # Source unchanged (we don't try to split via reassignment).
     assert "_it.command(" in out
@@ -168,7 +168,7 @@ end
 model cycle 100
 """)
 '''
-    out = preprocess_script(src)
+    out = preprocess_source(src)
     ast.parse(out)  # generated source must be valid Python
     calls = _call_lines(out, "it.command")
     assert len(calls) == 3
@@ -190,7 +190,7 @@ end
 model cycle 10
 """)
 '''
-    out = preprocess_script(src)
+    out = preprocess_source(src)
     calls = _call_lines(out, "itasca.command")
     assert len(calls) == 3
     block = _call_arg(calls[1], "itasca.command")
@@ -210,7 +210,7 @@ define legacy_fn
 End
 """)
 '''
-    out = preprocess_script(src)
+    out = preprocess_source(src)
     calls = _call_lines(out, "itasca.command")
     assert len(calls) == 2
     block = _call_arg(calls[1], "itasca.command")
@@ -231,7 +231,7 @@ fish define solo
 end
 """)
 '''
-    out = preprocess_script(src)
+    out = preprocess_source(src)
     assert out == src
 
 
@@ -248,7 +248,7 @@ fish define broken
 """)
 '''
     with caplog.at_level(logging.WARNING, logger="itasca-mcp-bridge"):
-        out = preprocess_script(src)
+        out = preprocess_source(src)
 
     calls = _call_lines(out, "itasca.command")
     assert len(calls) == 2
@@ -267,7 +267,7 @@ other = something
 other.command("just one line")
 '''
     with caplog.at_level(logging.DEBUG, logger="itasca-mcp-bridge"):
-        preprocess_script(src)
+        preprocess_source(src)
 
     debug_msgs = [r.getMessage() for r in caplog.records if r.levelno == logging.DEBUG]
     assert not any("splitter skipped" in m for m in debug_msgs), debug_msgs

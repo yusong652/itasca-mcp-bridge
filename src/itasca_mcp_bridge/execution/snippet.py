@@ -35,7 +35,7 @@ import threading
 import traceback
 from typing import Any, Dict, Optional
 
-from ..utils import TeeBuffer, capture_pfc_console, path_utils
+from ..utils import TeeBuffer, capture_pfc_console, path_utils, preprocess_source
 from ..signals import (
     set_current_task,
     clear_current_task,
@@ -100,6 +100,13 @@ def run_snippet(code, output_buffer, request_id=None):
         exec_globals = __main__.__dict__
         # Don't let a prior snippet's `result` leak into this one.
         exec_globals.pop("result", None)
+
+        # Split multi-line itasca.command() calls into one call per
+        # command, same as the task path: keeps the callback-registry
+        # repair hook effective per command and gives the L2 timeout
+        # injection bytecode edges to land on (see utils.command_splitter).
+        # Returns the source unchanged when there is nothing to split.
+        code = preprocess_source(code)
 
         cmdlog_dir = path_utils.logs_dir()
         with capture_pfc_console(sys.stdout, cmdlog_dir):

@@ -309,10 +309,14 @@ def register_interrupt_callback(itasca_module, position=INTERRUPT_CALLBACK_POSIT
                     pass
 
             result = _original_command(cmd)
-            # Check if command resets model (clears callback registry)
-            cmd_lower = cmd.strip().lower()
-            for reset_cmd in _MODEL_RESET_COMMANDS:
-                if cmd_lower.startswith(reset_cmd):
+            # Check if command resets model (clears callback registry).
+            # Scan every line: a multi-line batch can carry the reset
+            # command mid-string (e.g. via the unsplit execute_code
+            # path), where a whole-string startswith would miss it and
+            # leave the registry dead until some later first-line match.
+            for line in cmd.split("\n"):
+                line_lower = line.strip().lower()
+                if any(line_lower.startswith(rc) for rc in _MODEL_RESET_COMMANDS):
                     _re_register_callback(itasca_module, position)
                     break
             return result

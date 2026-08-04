@@ -357,24 +357,25 @@ def _build_replacement(call_name, commands, indent):
     return "\n".join(lines)
 
 
-def preprocess_script(script_content):
+def preprocess_source(source):
     # type: (str) -> str
     """Transform multi-line itasca.command() calls into individual calls.
 
-    This is the main entry point. If parsing or transformation fails,
-    the original script content is returned unchanged.
+    This is the main entry point, shared by the execute_task script path
+    and the execute_code snippet path. If parsing or transformation
+    fails, the original source is returned unchanged.
 
     Args:
-        script_content: Raw Python script content
+        source: Raw Python source (script file content or snippet)
 
     Returns:
-        Transformed script content with split command calls
+        Transformed source with split command calls
     """
     try:
-        tree = ast.parse(script_content)
+        tree = ast.parse(source)
     except SyntaxError:
         # Can't parse — return as-is (compile() will report the error later)
-        return script_content
+        return source
 
     module_aliases, bare_command_aliases = _collect_itasca_aliases(tree)
 
@@ -390,9 +391,9 @@ def preprocess_script(script_content):
 
     calls = _find_multiline_command_calls(tree, module_aliases, bare_command_aliases)
     if not calls:
-        return script_content
+        return source
 
-    source_lines = script_content.split("\n")
+    source_lines = source.split("\n")
 
     for call_node, cmd_string in calls:
         # Detect indentation from source; call name from AST.
@@ -411,5 +412,5 @@ def preprocess_script(script_content):
         source_lines[line_start:line_end] = replacement.split("\n")
 
     result = "\n".join(source_lines)
-    logger.debug("Preprocessed script: split %d multi-line command call(s)", len(calls))
+    logger.debug("Preprocessed source: split %d multi-line command call(s)", len(calls))
     return result
