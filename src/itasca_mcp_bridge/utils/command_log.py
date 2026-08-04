@@ -83,10 +83,28 @@ def _read_and_strip(log_path):
         return ""
 
 
+def _in_cycle_callback():
+    # type: () -> bool
+    """True when the innermost scope is nested inside another scope's
+    live command — i.e. we are executing in the cycle-gap callback of a
+    task that is currently inside `model cycle`."""
+    return any(outer.in_command for outer in _stack[:-1])
+
+
 def _patched(cmd):
     # type: (str) -> None
     ctx = _stack[-1]
-    _orig_command("program log on truncate show-message off")
+    # `show-message off` suppresses the logging banners in the GUI
+    # console, but PFC 6 does not know the keyword and complains
+    # ("Unused extra parameter") — and a command complaint raised inside
+    # the cycle callback makes PFC 6 silently abort the outer task's
+    # running `model cycle` (verified live on 6.00.030, 2026-08-05;
+    # PFC 7 accepts the keyword). Drop it whenever this command executes
+    # in the cycle callback: the banners are the lesser evil there.
+    if _in_cycle_callback():
+        _orig_command("program log on truncate")
+    else:
+        _orig_command("program log on truncate show-message off")
     ctx.in_command = True
     try:
         _orig_command(cmd)
@@ -181,7 +199,10 @@ def capture_pfc_console(stdout_sink, log_dir):
                 if outer.in_command:
                     # Resume the outer session in append mode (no truncate):
                     # its pre-interruption output is still in the file.
-                    _orig_command("program log on show-message off")
+                    # No `show-message off` here — this command always runs
+                    # inside the cycle callback (see _patched above for the
+                    # PFC 6 abort it would otherwise trigger).
+                    _orig_command("program log on")
             except Exception as e:
                 logger.warning(
                     "capture_pfc_console: failed to restore outer log session: %s",
