@@ -1,3 +1,5 @@
+
+
 # itasca-mcp-bridge
 
 [English](README.md) | [简体中文](README.zh-CN.md)
@@ -88,6 +90,13 @@ pip_main(["install", "--user", "itasca-mcp-bridge"])
 
 import itasca_mcp_bridge
 itasca_mcp_bridge.start()
+```
+
+For the console CLI, append `mode="console"` to `start()`:
+
+```python
+import itasca_mcp_bridge
+itasca_mcp_bridge.start(mode="console")
 ```
 
 The bridge is stdlib-only (`http.server` + Server-Sent Events), so there is
