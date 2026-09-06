@@ -4,6 +4,46 @@ All notable changes to `itasca-mcp-bridge` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2026-09-06
+
+### Fixed
+- PFC 6: a task's running `model cycle` / `model solve` is now resumed
+  when an `execute_code` engine command fails while the task cycles.
+  PFC 6 aborts the cycling a callback interrupted whenever a command
+  fails inside that callback, so a mistyped command sent through
+  `execute_code` cut the task's cycling short at that cycle: no "limit
+  met" line, the script's `itasca.command()` returned normally and the
+  task ended `completed` with the cycles silently missing (a
+  `model solve` looked converged). Nothing on the snippet side prevents
+  the abort, whether or not it catches the error. The wrapped
+  `itasca.command` now records the failure with the engine's cycle
+  count and, when the cycling command returns at exactly that cycle,
+  re-issues the remainder: `model cycle` with the cycles left,
+  `model solve` with its relative `cycles` limits rewritten (absolute
+  `cycles-total` / `time-total` / ratio limits verbatim), looping if
+  the re-issued command is aborted again. Each resume is noted in the
+  task log, and the snippet's error says what may have happened to the
+  task. A solve carrying `time`, `clock` or `elastic` is not resumed;
+  the log line says so. A pending `interrupt_task` still wins. PFC 7
+  keeps cycling and is unaffected.
+- PFC 6: `model new` / `model restore` sent through `execute_code`
+  while a task is cycling no longer kills the engine. The snippet runs
+  in the executor's cycle callback, where the engine is mid-cycle and
+  iterating its callback registry; the wrapped command's model-reset
+  repair hook re-registered the bridge's callbacks right there, and
+  mutating the live registry exited PFC3D 6.00.030 on the spot. The
+  repair is now deferred to the next execution entry point while a
+  cycle callback is running. The task the reset pulled the model from
+  under still fails with the engine's own error, as it should.
+- The bridge's own capture-control commands (`program log on/off`,
+  `program log-file`) are no longer interrupt points. 0.5.1 made every
+  command boundary honor a pending `interrupt_task`, but the log-off
+  that closes each command's capture runs while the flag is still set,
+  so it raised, the engine's log session stayed open and the
+  interrupted command's captured output was dropped. The next task then
+  inherited the live session: a stale banner led its log on every
+  engine, and on PFC 6 Python prints were delivered twice again.
+
 ## [0.5.1] - 2026-09-06
 
 ### Fixed

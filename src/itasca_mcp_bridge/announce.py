@@ -70,6 +70,14 @@ ANNOUNCEMENTS = {
         "swallows the interrupt inside a FISH command block (any engine: an "
         "interrupt takes effect at the next engine command).",
     ),
+    "0.5.2": (
+        "PFC 6: a mistyped execute_code command while a task cycles no longer "
+        "silently cuts the task's model cycle/solve short -- the bridge resumes "
+        "the remainder and notes it in the task log.",
+        "PFC 6: model new/restore sent through execute_code during cycling no "
+        "longer crashes the engine; interrupting a task keeps its captured "
+        "output and leaves the next task's log clean.",
+    ),
 }
 
 
