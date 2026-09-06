@@ -4,6 +4,33 @@ All notable changes to `itasca-mcp-bridge` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.5] - 2026-09-06
+
+### Fixed
+- The bridge no longer goes silent when the agent starts cycling after
+  the model was reset outside Python. `model new` / `model restore`
+  wipe the engine's cycle-callback registry, and the bridge's repair
+  hook only sees resets issued through the Python `itasca.command`. A
+  reset typed in the GUI console, run from the File menu, or executed
+  inside a `program call` script left the registry empty with nothing
+  to repair it — and since the engine holds the GIL for the whole
+  duration of a C-level command, the bridge's own cycle callbacks are
+  the only windows where the HTTP thread, status polls, `execute_code`
+  interleaving and interrupt can run. The agent's next `model cycle`
+  wedged the entire bridge for its duration with no error anywhere.
+  Every execution entry point (task scripts, idle-path `execute_code`)
+  now re-registers the callbacks unconditionally before user code runs
+  (remove-then-set, two C calls). Verified on PFC3D 9.7: after a
+  GUI-console `model new`, a 20000-cycle task kept `/health`,
+  `check_task_status` and `execute_code` reachable throughout.
+- Corrects the earlier reading of the `program call` wedge as a
+  version-specific GIL bug that 9.7 fixed: it is engine-independent
+  and depends only on whether the callback registry is intact. Cycling
+  inside a `program call` script whose file contains `model new` still
+  wedges for the file's duration (there is no Python boundary inside
+  the file to repair at); the bridge now self-heals as soon as the file
+  returns instead of staying dead until the next Python-issued reset.
+
 ## [0.4.4] - 2026-08-05
 
 ### Fixed
