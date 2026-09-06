@@ -43,7 +43,7 @@ import logging
 import os
 import re
 import sys
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from .command_log import flush_live_capture, live_capture_paused
 from .command_splitter import split_engine_commands
@@ -73,9 +73,25 @@ DEFAULT_EXTENSIONS = (
 # Nesting guard: deeper than this is passed to the engine untouched.
 MAX_DEPTH = 16
 
-# Directory stack of the files currently being expanded (innermost last),
+# Directory stacks of the files currently being expanded (innermost last),
 # so nested relative paths resolve against the calling file's directory.
-_dir_stack = []  # type: List[str]
+# Keyed by execution context (the bridge's current task / request id):
+# an execute_code snippet that arrives through the cycle-gap callback
+# while a task is cycling inside a nested call runs in its own context,
+# and its top-level `program call` must resolve against the working
+# directory — not against the task's current file. With one shared stack
+# it resolved (or failed to resolve, and was passed to the engine as one
+# opaque C call) against that file's directory.
+_dir_stacks = {}  # type: Dict[Optional[str], List[str]]
+
+
+def _context_key():
+    # type: () -> Optional[str]
+    try:
+        from ..signals.interrupt import peek_current_task
+    except ImportError:  # pragma: no cover - standalone use of this module
+        return None
+    return peek_current_task()
 
 
 class ParsedCall(object):
@@ -220,11 +236,13 @@ def expand_program_call(cmd, run):
     parsed = parse_program_call(cmd)
     if parsed is None:
         return False
-    if len(_dir_stack) >= MAX_DEPTH:
+    context = _context_key()
+    dir_stack = _dir_stacks.get(context, [])
+    if len(dir_stack) >= MAX_DEPTH:
         logger.warning("program call nesting deeper than %d; passing through", MAX_DEPTH)
         return False
 
-    base_dir = _dir_stack[-1] if _dir_stack else os.getcwd()
+    base_dir = dir_stack[-1] if dir_stack else os.getcwd()
     path = resolve_target(parsed.target, base_dir)
     if path is None:
         return False
@@ -244,7 +262,8 @@ def expand_program_call(cmd, run):
     n_commands = sum(1 for e in entries if not e.startswith(";"))
     _echo("[bridge] program call '{}': {} command(s) run inline".format(display, n_commands))
 
-    _dir_stack.append(os.path.dirname(os.path.abspath(path)))
+    dir_stack = _dir_stacks.setdefault(context, [])
+    dir_stack.append(os.path.dirname(os.path.abspath(path)))
     try:
         for entry in entries:
             if entry.startswith(";"):
@@ -263,7 +282,10 @@ def expand_program_call(cmd, run):
                 # task log when the file finishes.
                 flush_live_capture()
     finally:
-        _dir_stack.pop()
+        dir_stack.pop()
+        if not dir_stack:
+            # Drop the emptied stack so finished contexts do not accumulate.
+            _dir_stacks.pop(context, None)
     return True
 
 

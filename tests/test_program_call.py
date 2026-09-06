@@ -23,9 +23,9 @@ from itasca_mcp_bridge.utils.program_call import (
 @pytest.fixture(autouse=True)
 def _cwd(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
-    assert pc._dir_stack == []
+    assert pc._dir_stacks == {}
     yield
-    assert pc._dir_stack == [], "directory stack must unwind"
+    assert pc._dir_stacks == {}, "directory stacks must unwind and be released"
 
 
 def _write(path, text):
@@ -184,6 +184,43 @@ class TestExpand:
             expand_program_call("program call 'bad.p3dat'", run)
         assert "bogus command" in str(info.value)
         assert "bad.p3dat" in str(info.value)
+
+    def test_snippet_in_cycle_gap_resolves_against_cwd_not_task_file(self, tmp_path):
+        # A task is cycling inside sub/outer.p3dat -> sub/inner.p3dat when
+        # an execute_code snippet arrives through the cycle-gap callback
+        # and issues its own top-level `program call 'probe.p3dat'`. The
+        # snippet runs under its own context id; its call must resolve
+        # against the working directory (like the engine would for a
+        # top-level call), not against sub/ where the task currently is.
+        from itasca_mcp_bridge.signals.interrupt import clear_current_task, set_current_task
+
+        _write(tmp_path / "sub" / "outer.p3dat", "program call 'inner.p3dat'\nball create id 2\n")
+        _write(tmp_path / "sub" / "inner.p3dat", "model cycle 10\n")
+        _write(tmp_path / "probe.p3dat", "ball list ; top-level probe\n")
+        _write(tmp_path / "sub" / "probe.p3dat", "ball list ; WRONG: task-file-relative probe\n")
+        task_ran, snippet_ran = [], []
+
+        def task_run(cmd):
+            if expand_program_call(cmd, task_run):
+                return
+            task_ran.append(cmd)
+            if cmd.startswith("model cycle"):
+                # cycle-gap callback: snippet runs under its request id
+                set_current_task("req-1")
+                try:
+                    if not expand_program_call("program call 'probe.p3dat'", snippet_ran.append):
+                        snippet_ran.append("passthrough")
+                finally:
+                    set_current_task("task-1")
+
+        set_current_task("task-1")
+        try:
+            assert expand_program_call("program call 'sub/outer.p3dat'", task_run) is True
+        finally:
+            clear_current_task()
+
+        assert task_ran == ["model cycle 10", "ball create id 2"]
+        assert snippet_ran == ["ball list ; top-level probe"]
 
     def test_depth_guard_passes_through(self, tmp_path, monkeypatch):
         _write(tmp_path / "self.p3dat", "program call 'self.p3dat'\n")
