@@ -51,6 +51,13 @@ ANNOUNCEMENTS = {
         "PFC 6: interrupting a task now reports 'interrupted' (was 'failed'), "
         "and a live execute_code during cycling no longer silently stops the run.",
     ),
+    "0.4.5": (
+        "Fixed the bridge going silent when the agent cycles after a 'model new' "
+        "or 'model restore' issued in the GUI console, File menu, or a called "
+        ".dat: the bridge now repairs its cycle callbacks before every execution.",
+        "Cycling inside a called .dat that itself contains 'model new' still "
+        "blocks until the file returns -- run such files as inline commands.",
+    ),
 }
 
 
