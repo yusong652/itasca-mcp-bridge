@@ -190,6 +190,79 @@ class TestModelResetReRegistration:
         assert self._interrupt_registrations(fake) == base + 1
 
 
+class TestCommandBoundaryInterrupt:
+    """_wrapped_command honors a pending interrupt at every command
+    boundary. The engine does not always propagate the cycle callback's
+    InterruptedError: PFC 6 swallows it when cycling was started from a
+    FISH `command` block and carries on with the next command. The
+    task's flag is still set, so the wrapper raises before the next
+    command starts and after the current one returns."""
+
+    def _registered_fake(self) -> _FakeItasca:
+        from itasca_mcp_bridge.signals.interrupt import register_interrupt_callback
+
+        fake = _FakeItasca()
+        assert register_interrupt_callback(fake) is True
+        return fake
+
+    def test_no_pending_interrupt_runs_command(self):
+        fake = self._registered_fake()
+        set_current_task("t1")
+        try:
+            fake.command("ball list")
+            assert fake.commands == ["ball list"]
+        finally:
+            clear_current_task()
+
+    def test_pending_interrupt_raises_before_running_next_command(self):
+        fake = self._registered_fake()
+        set_current_task("t1")
+        request_interrupt("t1")
+        try:
+            with pytest.raises(InterruptedError):
+                fake.command("ball list")
+            assert fake.commands == []  # never reached the engine
+        finally:
+            clear_interrupt("t1")
+            clear_current_task()
+
+    def test_interrupt_swallowed_by_engine_is_raised_after_command_returns(self):
+        # Emulate PFC 6: the flag is set (callback raised) during the
+        # command, but the engine swallows the exception and returns.
+        fake = self._registered_fake()
+        real_command = fake.command  # the wrapper
+
+        def swallowing_engine(cmd):
+            _FakeItasca.command(fake, cmd)
+            request_interrupt("t1")
+
+        # Rebuild the wrapper over the swallowing engine.
+        fake.command = swallowing_engine
+        from itasca_mcp_bridge.signals.interrupt import register_interrupt_callback
+
+        assert register_interrupt_callback(fake) is True
+        set_current_task("t1")
+        try:
+            with pytest.raises(InterruptedError):
+                fake.command("@settle(20000)")
+            assert fake.commands == ["@settle(20000)"]
+        finally:
+            clear_interrupt("t1")
+            clear_current_task()
+        del real_command
+
+    def test_unrelated_task_flag_is_ignored(self):
+        fake = self._registered_fake()
+        set_current_task("t1")
+        request_interrupt("other")
+        try:
+            fake.command("ball list")
+            assert fake.commands == ["ball list"]
+        finally:
+            clear_interrupt("other")
+            clear_current_task()
+
+
 class _RegistryFakeItasca:
     """itasca stand-in with an actual cycle-callback registry, so a test
     can simulate a `model new` issued OUTSIDE the wrapped Python

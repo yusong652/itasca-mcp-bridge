@@ -357,3 +357,65 @@ class TestFlushLiveCapture:
         final = sink.getvalue()
         assert final.count("Ball 1 created") == 1
         assert final.count("Ball 2 created") == 1
+
+
+class TestLiveCapturePaused:
+    """live_capture_paused() keeps the live session OFF while the body
+    runs. PFC 6 logs the console copy of Python prints into the
+    `program log` file, so a print made while a session is live would
+    be delivered twice (sys.stdout + captured chunk)."""
+
+    def test_noop_outside_command(self, fake_itasca, tmp_path):
+        from itasca_mcp_bridge.utils.command_log import live_capture_paused
+
+        with live_capture_paused() as paused:
+            assert paused is False
+        with capture_engine_console(StringIO(), str(tmp_path)):
+            with live_capture_paused() as paused:
+                assert paused is False  # scope open, no command live
+
+    def test_session_off_during_body_and_resumed_after(self, fake_itasca, tmp_path):
+        import itasca
+        from itasca_mcp_bridge.utils.command_log import live_capture_paused
+
+        fake_itasca.outputs["ball create id 1"] = "--- Ball 1 created\n"
+        fake_itasca.outputs["ball create id 2"] = "--- Ball 2 created\n"
+        seen = {}
+
+        def expander(cmd):
+            if cmd != "program call 'x.p3dat'":
+                return
+            fake_itasca.command("ball create id 1")
+            with live_capture_paused() as paused:
+                seen["paused"] = paused
+                seen["logging_in_body"] = fake_itasca.logging
+                seen["sink_in_body"] = sink.getvalue()
+                # What PFC 6 does with a console print while logging is
+                # on: the engine would have appended it to the log file.
+                fake_itasca._append("; comment printed here\n")
+            seen["logging_after"] = fake_itasca.logging
+            fake_itasca.command("ball create id 2")
+
+        orig = fake_itasca.command
+
+        def wrapper(cmd):
+            expander(cmd)
+            if cmd.startswith("program call"):
+                return
+            orig(cmd)
+
+        sys.modules["itasca"].command = wrapper
+        sink = StringIO()
+        with capture_engine_console(sink, str(tmp_path)):
+            itasca.command("program call 'x.p3dat'")
+
+        assert seen["paused"] is True
+        assert seen["logging_in_body"] is False
+        assert "Ball 1 created" in seen["sink_in_body"]  # flushed before the body
+        assert seen["logging_after"] is True
+        final = sink.getvalue()
+        assert final.count("Ball 1 created") == 1
+        assert final.count("Ball 2 created") == 1
+        # The body's console line was written while the session was off,
+        # so the resumed (truncated) session never captured it.
+        assert "comment printed here" not in final

@@ -119,6 +119,29 @@ def _patched(cmd):
                 logger.warning("capture_engine_console: stdout write failed: %s", e)
 
 
+def _suspend_live_session(ctx):
+    # type: (_CaptureContext) -> None
+    """End the scope's live log session and deliver what it captured."""
+    _orig_command("program log off")
+    chunk = _read_and_strip(ctx.log_path)
+    if chunk:
+        try:
+            ctx.sink.write(chunk)
+        except Exception as e:
+            logger.warning("capture_engine_console: stdout write failed: %s", e)
+
+
+def _resume_live_session():
+    # type: () -> None
+    """Restart the live log session on a truncated file, so the outer
+    ``_patched`` reads nothing it has not already written when it
+    closes the session."""
+    if _in_cycle_callback():
+        _orig_command("program log on truncate")
+    else:
+        _orig_command("program log on truncate show-message off")
+
+
 def flush_live_capture():
     # type: () -> bool
     """Flush the innermost scope's live log session to its sink, then
@@ -131,8 +154,6 @@ def flush_live_capture():
     chunk when the outer command returns. Calling this after each inner
     command restores per-command delivery.
 
-    Restarting with ``truncate`` means the outer ``_patched`` reads
-    nothing it has not already written when it closes the session.
     No-op (returns False) when no capture scope is mid-command.
     """
     if not _stack:
@@ -140,18 +161,34 @@ def flush_live_capture():
     ctx = _stack[-1]
     if not ctx.in_command:
         return False
-    _orig_command("program log off")
-    chunk = _read_and_strip(ctx.log_path)
-    if chunk:
-        try:
-            ctx.sink.write(chunk)
-        except Exception as e:
-            logger.warning("capture_engine_console: stdout write failed: %s", e)
-    if _in_cycle_callback():
-        _orig_command("program log on truncate")
-    else:
-        _orig_command("program log on truncate show-message off")
+    _suspend_live_session(ctx)
+    _resume_live_session()
     return True
+
+
+@contextmanager
+def live_capture_paused():
+    # type: () -> object
+    """Keep the innermost scope's live log session *off* while the body
+    runs, flushing what it captured so far first.
+
+    For Python ``print`` calls made mid-command. PFC 6 records the GUI
+    console's Python output in the ``program log`` file too, so a line
+    printed while a session is live reaches the task log twice — once
+    from ``sys.stdout``, once from the captured chunk (and the second
+    copy is read back from the engine's ANSI-encoded log, so non-ASCII
+    text in it is mojibake). PFC 7/9 do not log Python output, but the
+    pause is harmless there. Yields True when a session was paused,
+    False (body runs as-is) when no capture scope is mid-command.
+    """
+    if not _stack or not _stack[-1].in_command:
+        yield False
+        return
+    _suspend_live_session(_stack[-1])
+    try:
+        yield True
+    finally:
+        _resume_live_session()
 
 
 @contextmanager

@@ -369,7 +369,18 @@ def register_interrupt_callback(itasca_module, position=INTERRUPT_CALLBACK_POSIT
             if expand_program_call(cmd, _wrapped_command):
                 return None
 
+            # Every command boundary is an interrupt point, not only
+            # cycle callbacks. The engine does not always propagate the
+            # callback's InterruptedError: PFC 6 swallows it when the
+            # cycling was started from a FISH `command` block, prints
+            # the traceback to the console and carries on with the next
+            # command as if nothing happened (verified live on 6.00.030,
+            # 2026-09-06). The task's flag is still set, so honor it here
+            # — before starting a new command, and after this one returns
+            # in case it was the last.
+            _pfc_interrupt_check()
             result = _original_command(cmd)
+            _pfc_interrupt_check()
             # Check if command resets model (clears callback registry).
             # Scan every line: a multi-line batch can carry the reset
             # command mid-string (e.g. via the unsplit execute_code
