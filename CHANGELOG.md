@@ -4,6 +4,30 @@ All notable changes to `itasca-mcp-bridge` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-09-06
+
+### Changed
+- `program call '<file>'` issued through `itasca.command` now runs the
+  data file inline, one command per engine call, instead of handing the
+  whole file to the engine as a single C call. Behaviour change for
+  users: a called file that contains `model new` / `model restore` no
+  longer leaves the bridge unreachable and the task uninterruptible for
+  the file's duration — `check_task_status`, `execute_code` interleaving
+  and `interrupt_task` all work inside the file, and the task log shows
+  the file's console output and its comment lines command by command as
+  they happen, not in one block at the end. Engine semantics are
+  reproduced (each verified live on PFC3D 9.7): nested relative paths
+  resolve against the calling file's directory, a missing extension is
+  defaulted, `program return` ends the file, `:label` lines are comments
+  and the targets of `label`, `line <i>` starts at that line, `suppress`
+  is accepted. Errors carry the offending command and file name. Forms
+  the bridge cannot honor exactly go to the engine unchanged: several
+  `call` keywords on one line, unknown keywords, `.py` targets, files
+  that do not resolve on disk, non-text (`program encrypt`) files,
+  nesting deeper than 16. Remaining gap: `model new` inside a FISH
+  `command … endcommand` block followed by cycling in the same block is
+  still one C call.
+
 ## [0.4.5] - 2026-09-06
 
 ### Fixed

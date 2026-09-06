@@ -58,6 +58,12 @@ ANNOUNCEMENTS = {
         "Cycling inside a called .dat that itself contains 'model new' still "
         "blocks until the file returns -- run such files as inline commands.",
     ),
+    "0.5.0": (
+        "program call '<file>' now runs the data file inline, one command per "
+        "engine call: a called .dat with 'model new' keeps the bridge reachable, "
+        "stays interruptible, and its console output lands in the task log as "
+        "it happens (nested calls, program return, label/line honored).",
+    ),
 }
 
 
