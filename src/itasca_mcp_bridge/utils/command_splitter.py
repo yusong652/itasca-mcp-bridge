@@ -49,14 +49,16 @@ _FISH_BLOCK_START = re.compile(
 _FISH_BLOCK_END = re.compile(r"^end\s*(?:;.*)?$", re.IGNORECASE)
 
 
-def split_engine_commands(multiline_str):
-    # type: (str) -> List[str]
+def split_engine_commands(multiline_str, keep_comments=False):
+    # type: (str, bool) -> List[str]
     """Split a multi-line ITASCA command string into individual commands.
 
     Handles:
     - Newline-separated commands
     - ITASCA line continuation with '...' at end of line
-    - ITASCA comments starting with ';'
+    - ITASCA comments starting with ';' — dropped, or emitted as their
+      own entries (starting with ';') when ``keep_comments`` is set, so a
+      caller replaying a data file can echo them in place
     - Empty/whitespace-only lines
     - FISH definition blocks (`fish define`/`fish operator`/legacy bare
       `define` ... `end`): kept whole as ONE multi-line command, body
@@ -92,7 +94,11 @@ def split_engine_commands(multiline_str):
             continue
 
         # Skip empty lines and pure comment lines
-        if not stripped or stripped.startswith(";"):
+        if not stripped:
+            continue
+        if stripped.startswith(";"):
+            if keep_comments:
+                commands.append(stripped)
             continue
 
         if _FISH_BLOCK_START.match(stripped):

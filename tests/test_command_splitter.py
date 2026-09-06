@@ -275,3 +275,22 @@ other.command("just one line")
     warn_msgs = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
     assert not any("splitter skipped" in m for m in warn_msgs), warn_msgs
     assert "[bridge warning]" not in capsys.readouterr().out
+
+
+class TestKeepComments:
+    def test_comments_dropped_by_default(self):
+        from itasca_mcp_bridge.utils.command_splitter import split_engine_commands
+
+        assert split_engine_commands("; a\nmodel cycle 1\n; b\n") == ["model cycle 1"]
+
+    def test_comments_emitted_in_place_when_kept(self):
+        from itasca_mcp_bridge.utils.command_splitter import split_engine_commands
+
+        out = split_engine_commands("; stage 1\nmodel cycle 1\n  ; stage 2 \nmodel cycle 2\n", keep_comments=True)
+        assert out == ["; stage 1", "model cycle 1", "; stage 2", "model cycle 2"]
+
+    def test_fish_block_body_comments_stay_inside_block(self):
+        from itasca_mcp_bridge.utils.command_splitter import split_engine_commands
+
+        out = split_engine_commands("fish define f\n  ; inside\n  x = 1\nend\n", keep_comments=True)
+        assert out == ["fish define f\n  ; inside\n  x = 1\nend"]

@@ -23,6 +23,7 @@ import logging
 from typing import Any, Optional
 
 from .positions import INTERRUPT_CALLBACK_POSITION, EXECUTOR_CALLBACK_POSITION, register_cycle_callback
+from ..utils.program_call import expand_program_call
 
 # Module logger
 logger = logging.getLogger("itasca-mcp-bridge")
@@ -358,6 +359,15 @@ def register_interrupt_callback(itasca_module, position=INTERRUPT_CALLBACK_POSIT
                         main_mod._pfc_executor_callback = _pfc_executor_callback  # type: ignore[attr-defined]
                 except ImportError:
                     pass
+
+            # `program call '<file>'` would run the whole file as one C
+            # call; a `model new` inside it wipes the callback registry
+            # with no boundary to repair at. Feed the file's commands
+            # through this wrapper one at a time instead (each gets the
+            # repair below and nested expansion). Falls through to the
+            # engine for any form the expander cannot honor exactly.
+            if expand_program_call(cmd, _wrapped_command):
+                return None
 
             result = _original_command(cmd)
             # Check if command resets model (clears callback registry).
