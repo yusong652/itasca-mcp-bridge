@@ -18,6 +18,7 @@ Architecture:
 Python 3.6 compatible implementation.
 """
 
+import re
 import threading
 import logging
 from typing import Any, Optional
@@ -300,6 +301,18 @@ def ensure_cycle_callbacks():
 # Commands that clear ITASCA's callback registry
 _MODEL_RESET_COMMANDS = ("model new", "model restore")
 
+# The bridge's own console-capture control commands (``utils.command_log``
+# wraps every user command in ``program log on`` / ``program log off`` and
+# switches files with ``program log-file``). These must never become
+# interrupt points: they run in cleanup paths — the ``program log off`` in
+# ``_patched``'s ``finally`` executes while the task's interrupt flag is
+# still set — and raising there would skip the log-off, leaving the engine's
+# log session open and dropping the interrupted command's captured output.
+# The next command then inherits a live session: on PFC 6 its Python prints
+# are logged and delivered twice, and ``program log on truncate`` does not
+# truncate, so a stale banner leads the next task's log.
+_LOG_CONTROL_RE = re.compile(r"^\s*pro\w*\s+log\b", re.IGNORECASE)
+
 
 def register_interrupt_callback(itasca_module, position=INTERRUPT_CALLBACK_POSITION):
     # type: (Any, float) -> bool
@@ -377,10 +390,16 @@ def register_interrupt_callback(itasca_module, position=INTERRUPT_CALLBACK_POSIT
             # command as if nothing happened (verified live on 6.00.030,
             # 2026-09-06). The task's flag is still set, so honor it here
             # — before starting a new command, and after this one returns
-            # in case it was the last.
-            _pfc_interrupt_check()
+            # in case it was the last. The bridge's own capture-control
+            # commands are exempt (see _LOG_CONTROL_RE): they run in
+            # cleanup paths that must complete even while an interrupt
+            # is pending.
+            checked = _LOG_CONTROL_RE.match(cmd) is None
+            if checked:
+                _pfc_interrupt_check()
             result = _original_command(cmd)
-            _pfc_interrupt_check()
+            if checked:
+                _pfc_interrupt_check()
             # Check if command resets model (clears callback registry).
             # Scan every line: a multi-line batch can carry the reset
             # command mid-string (e.g. via the unsplit execute_code
