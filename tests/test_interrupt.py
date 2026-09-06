@@ -251,6 +251,47 @@ class TestCommandBoundaryInterrupt:
             clear_current_task()
         del real_command
 
+    def test_capture_control_commands_are_not_interrupt_points(self):
+        # utils.command_log wraps every user command in `program log
+        # on`/`off` and its log-off runs in a finally while the task's
+        # interrupt flag is still set. Raising there would skip the
+        # log-off, leaving the engine's log session open and dropping
+        # the interrupted command's captured output.
+        fake = self._registered_fake()
+        set_current_task("t1")
+        request_interrupt("t1")
+        try:
+            for control in (
+                "program log off",
+                "program log on truncate show-message off",
+                "program log-file 'task.log'",
+            ):
+                fake.command(control)  # must not raise
+            assert fake.commands == [
+                "program log off",
+                "program log on truncate show-message off",
+                "program log-file 'task.log'",
+            ]
+            # A real command still aborts.
+            with pytest.raises(InterruptedError):
+                fake.command("model cycle 100")
+        finally:
+            clear_interrupt("t1")
+            clear_current_task()
+
+    def test_lookalike_commands_are_still_interrupt_points(self):
+        fake = self._registered_fake()
+        set_current_task("t1")
+        request_interrupt("t1")
+        try:
+            for cmd in ("program logic", "fish define log", "ball list"):
+                with pytest.raises(InterruptedError):
+                    fake.command(cmd)
+            assert fake.commands == []
+        finally:
+            clear_interrupt("t1")
+            clear_current_task()
+
     def test_unrelated_task_flag_is_ignored(self):
         fake = self._registered_fake()
         set_current_task("t1")
