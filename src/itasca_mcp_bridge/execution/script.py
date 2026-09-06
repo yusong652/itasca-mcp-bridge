@@ -25,7 +25,13 @@ from ..utils import (
     preprocess_source,
     capture_engine_console,
 )
-from ..signals import set_current_task, clear_current_task, clear_interrupt, check_interrupt
+from ..signals import (
+    set_current_task,
+    clear_current_task,
+    clear_interrupt,
+    check_interrupt,
+    ensure_cycle_callbacks,
+)
 
 # Module logger
 logger = logging.getLogger("itasca-mcp-bridge")
@@ -71,6 +77,14 @@ class ScriptRunner:
         task = self.task_manager.tasks.get(task_id)
         if task:
             task.status = "running"
+
+        # Scripts always arrive via the idle main-thread queue, never from
+        # inside a cycle callback, so it is safe to repair the engine's
+        # cycle-callback registry here. Without this, a `model new` /
+        # `model restore` issued outside the Python itasca.command (GUI
+        # console, File menu, a `program call` script) leaves the registry
+        # empty and the script's first `model cycle` wedges the bridge.
+        ensure_cycle_callbacks()
 
         # Use TeeBuffer so output goes to both terminal and capture buffer
         old_stdout = sys.stdout

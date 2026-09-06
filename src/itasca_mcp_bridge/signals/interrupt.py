@@ -222,6 +222,13 @@ def _pfc_interrupt_check():
 # ITASCA Callback Registration
 # =============================================================================
 
+# The itasca module handed to register_interrupt_callback(); kept so
+# ensure_cycle_callbacks() can re-register without threading the module
+# through every execution entry point.
+_itasca_module = None  # type: Any
+_interrupt_position = INTERRUPT_CALLBACK_POSITION  # type: float
+
+
 def _re_register_callback(itasca_module, position=INTERRUPT_CALLBACK_POSITION):
     # type: (Any, float) -> None
     """
@@ -233,7 +240,7 @@ def _re_register_callback(itasca_module, position=INTERRUPT_CALLBACK_POSITION):
     import __main__
     __main__._pfc_interrupt_check = _pfc_interrupt_check  # type: ignore[attr-defined]
     register_cycle_callback(itasca_module, "_pfc_interrupt_check", position)
-    logger.debug("Interrupt callback re-registered after model reset")
+    logger.debug("Interrupt callback (re)registered")
 
     # Also re-register executor callback if it was registered
     try:
@@ -241,9 +248,52 @@ def _re_register_callback(itasca_module, position=INTERRUPT_CALLBACK_POSITION):
         if is_executor_callback_registered():
             __main__._pfc_executor_callback = _pfc_executor_callback  # type: ignore[attr-defined]
             register_cycle_callback(itasca_module, "_pfc_executor_callback", EXECUTOR_CALLBACK_POSITION)
-            logger.debug("Executor callback re-registered after model reset")
+            logger.debug("Executor callback (re)registered")
     except ImportError:
         pass  # cycle_executor not available
+
+
+def ensure_cycle_callbacks():
+    # type: () -> bool
+    """
+    Unconditionally (re)register the bridge's cycle callbacks.
+
+    Called at every execution entry point that reaches the engine from
+    the idle main-thread queue (execute_code queue path, execute_task
+    scripts), right before user code runs.
+
+    Why unconditional: the engine holds the GIL for the whole duration
+    of a C-level ``itasca.command``; the only windows where the HTTP
+    thread, status polls, ``execute_code`` interleaving and interrupt
+    can run are the bridge's own Python cycle callbacks. ``model new`` /
+    ``model restore`` wipe the engine's cycle-callback registry, and the
+    ``_wrapped_command`` repair hook only sees resets issued through the
+    Python ``itasca.command`` — a reset typed in the GUI console, run
+    from the File menu, or executed inside a ``program call`` script
+    leaves the registry empty with nothing to repair it. The next
+    ``model cycle`` then wedges the whole bridge for its duration.
+    There is no engine API to list cycle callbacks, so the entry points
+    cannot check; they re-register (remove-then-set, idempotent on every
+    engine version) at a cost of two C calls per execution.
+
+    Must not be called from inside a cycle callback (the callback-path
+    ``execute_code`` route): the registry is live there by definition,
+    and mutating it mid-cycle is not something the engine promises to
+    tolerate.
+
+    Returns:
+        bool: True if callbacks were (re)registered, False if the
+        interrupt callback was never registered (bridge not started)
+        or the engine rejected the registration.
+    """
+    if _itasca_module is None:
+        return False
+    try:
+        _re_register_callback(_itasca_module, _interrupt_position)
+        return True
+    except Exception as e:
+        logger.warning("Cycle callback re-registration failed: %s", e)
+        return False
 
 
 # Commands that clear ITASCA's callback registry
@@ -273,6 +323,7 @@ def register_interrupt_callback(itasca_module, position=INTERRUPT_CALLBACK_POSIT
     Returns:
         bool: True if registered successfully
     """
+    global _itasca_module, _interrupt_position
     try:
         # Inject function into __main__ namespace (required for ITASCA lookup)
         import __main__
@@ -322,6 +373,11 @@ def register_interrupt_callback(itasca_module, position=INTERRUPT_CALLBACK_POSIT
             return result
 
         itasca_module.command = _wrapped_command
+
+        # Remember the module so ensure_cycle_callbacks() can repair the
+        # registry from the execution entry points.
+        _itasca_module = itasca_module
+        _interrupt_position = position
 
         logger.info("Interrupt callback registered (position=%.1f)", position)
         return True
