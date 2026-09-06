@@ -4,6 +4,36 @@ All notable changes to `itasca-mcp-bridge` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-09-06
+
+### Fixed
+- PFC 6: the `[bridge] program call` header and the data file's comment
+  lines no longer appear twice in the task log. PFC 6 records the GUI
+  console's Python output in the `program log` file too, so lines
+  printed while the file's live log session was on were delivered once
+  from stdout and once from the captured chunk (the second copy read
+  back from the ANSI-encoded engine log, so non-ASCII text in it was
+  mojibake). The expander now pauses the capture session around those
+  prints. PFC 7/9 were unaffected.
+- A pending `interrupt_task` is now honored at every command boundary,
+  not only in the cycle callback. PFC 6 swallows the callback's
+  `InterruptedError` when cycling was started from inside a FISH
+  `command … endcommand` block: it printed the traceback, returned from
+  the FISH call normally and carried on with the next command, so an
+  interrupted task ran its data file to the end and finished
+  `completed`. The wrapped `itasca.command` now checks the flag before
+  starting a command and after it returns, so the task aborts at the
+  next command instead. Also makes an interrupt effective for scripts
+  that are between commands (for example in `time.sleep`) at their next
+  engine call.
+- `program call` issued from an `execute_code` snippet while a task is
+  cycling inside a nested called file is now expanded and resolved
+  against the working directory. The expander's directory stack was
+  process-wide, so the snippet's top-level call resolved against the
+  task's current file directory, did not resolve, and went to the
+  engine as one opaque C call. Stacks are now kept per execution
+  context (task or snippet).
+
 ## [0.5.0] - 2026-09-06
 
 ### Changed

@@ -64,6 +64,12 @@ ANNOUNCEMENTS = {
         "stays interruptible, and its console output lands in the task log as "
         "it happens (nested calls, program return, label/line honored).",
     ),
+    "0.5.1": (
+        "PFC 6: called .dat header/comment lines no longer show twice in the "
+        "task log, and interrupt_task now stops a task even when the engine "
+        "swallows the interrupt inside a FISH command block (any engine: an "
+        "interrupt takes effect at the next engine command).",
+    ),
 }
 
 
