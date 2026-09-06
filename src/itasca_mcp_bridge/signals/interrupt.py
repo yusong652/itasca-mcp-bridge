@@ -239,6 +239,25 @@ def _re_register_callback(itasca_module, position=INTERRUPT_CALLBACK_POSITION):
     Called after model new/restore commands which clear ITASCA's callback registry.
     Also re-registers executor callback if it was registered.
     """
+    # Never mutate the registry from inside a cycle callback: the engine is
+    # mid-cycle and iterating it, and remove_callback/set_callback there
+    # hard-crashes the process (PFC3D 6.00.030 exits on the spot; verified
+    # 2026-09-06 with `model new` sent through execute_code while a task was
+    # cycling, which reaches this function through _wrapped_command's
+    # model-reset repair hook). Skipping is safe: the wiped registry is
+    # repaired by ensure_cycle_callbacks() at the next execution entry point,
+    # and the cycle the reset interrupted is finished either way.
+    try:
+        from .cycle_executor import in_cycle_callback
+    except ImportError:
+        in_cycle_callback = None  # type: ignore[assignment]
+    if in_cycle_callback is not None and in_cycle_callback():
+        logger.warning(
+            "Model reset inside a cycle callback: deferring callback "
+            "re-registration to the next execution entry point"
+        )
+        return
+
     import __main__
     __main__._pfc_interrupt_check = _pfc_interrupt_check  # type: ignore[attr-defined]
     register_cycle_callback(itasca_module, "_pfc_interrupt_check", position)
