@@ -299,3 +299,61 @@ class TestNestedScope:
 
         assert states["patched_after_inner_exit"] is True
         assert itasca.command == fake_itasca.command
+
+
+class TestFlushLiveCapture:
+    """flush_live_capture() delivers a live session's output mid-command
+    (used by the program-call expander, which runs a whole file beneath
+    one patched command) without duplicating it when the outer patched
+    command closes the session."""
+
+    def test_noop_outside_scope_and_outside_command(self, fake_itasca, tmp_path):
+        from itasca_mcp_bridge.utils.command_log import flush_live_capture
+
+        assert flush_live_capture() is False
+        sink = StringIO()
+        with capture_engine_console(sink, str(tmp_path)):
+            assert flush_live_capture() is False  # scope open, no command live
+        assert sink.getvalue() == ""
+
+    def test_mid_command_flush_delivers_incrementally_without_duplication(self, fake_itasca, tmp_path):
+        import itasca
+        from itasca_mcp_bridge.utils.command_log import flush_live_capture
+
+        fake_itasca.outputs["ball create id 1"] = "--- Ball 1 created\n"
+        fake_itasca.outputs["ball create id 2"] = "--- Ball 2 created\n"
+        seen_at_flush = {}
+
+        def expander(cmd):
+            # Emulates the program-call expander: several engine commands
+            # beneath ONE patched call, flushing after each.
+            if cmd != "program call 'x.p3dat'":
+                return
+            inner = itasca.command  # the patched function
+            # The expander calls the *interrupt wrapper* (beneath the patch),
+            # which for this fake is the raw command.
+            fake_itasca.command("ball create id 1")
+            flush_live_capture()
+            seen_at_flush["after_first"] = sink.getvalue()
+            fake_itasca.command("ball create id 2")
+            flush_live_capture()
+
+        # Install the expander beneath the capture patch, like the interrupt wrapper.
+        orig = fake_itasca.command
+
+        def wrapper(cmd):
+            expander(cmd)
+            if cmd.startswith("program call"):
+                return
+            orig(cmd)
+
+        sys.modules["itasca"].command = wrapper
+        sink = StringIO()
+        with capture_engine_console(sink, str(tmp_path)):
+            itasca.command("program call 'x.p3dat'")
+
+        assert "Ball 1 created" in seen_at_flush["after_first"]
+        assert "Ball 2 created" not in seen_at_flush["after_first"]
+        final = sink.getvalue()
+        assert final.count("Ball 1 created") == 1
+        assert final.count("Ball 2 created") == 1

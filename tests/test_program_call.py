@@ -225,3 +225,33 @@ class TestExpand:
         fake.command("program call 'run.p3dat'")
         assert fake.commands == ["model new", "model cycle 10"]
         assert fake.set_calls.count("_pfc_interrupt_check") == base + 1
+
+
+class TestOutputFidelity:
+    def test_comments_echoed_in_place(self, tmp_path, capsys):
+        _write(tmp_path / "c.p3dat", "; stage 1\nball create id 1\n; stage 2\nball create id 2\n")
+        ran = []
+        expand_program_call("program call 'c.p3dat'", ran.append)
+        assert ran == ["ball create id 1", "ball create id 2"]
+        out = capsys.readouterr().out.splitlines()
+        assert out[0].startswith("[bridge] program call 'c.p3dat': 2 command(s)")
+        assert out[1:] == ["; stage 1", "; stage 2"]
+
+    def test_capture_flushed_after_each_command(self, tmp_path, monkeypatch):
+        _write(tmp_path / "f.p3dat", "ball create id 1\nball create id 2\n")
+        events = []
+        monkeypatch.setattr(pc, "flush_live_capture", lambda: events.append("flush"))
+        expand_program_call("program call 'f.p3dat'", lambda c: events.append(c))
+        assert events == ["ball create id 1", "flush", "ball create id 2", "flush"]
+
+    def test_capture_flushed_even_when_command_fails(self, tmp_path, monkeypatch):
+        _write(tmp_path / "f.p3dat", "bogus\n")
+        events = []
+        monkeypatch.setattr(pc, "flush_live_capture", lambda: events.append("flush"))
+
+        def run(cmd):
+            raise ValueError("no")
+
+        with pytest.raises(ValueError):
+            expand_program_call("program call 'f.p3dat'", run)
+        assert events == ["flush"]

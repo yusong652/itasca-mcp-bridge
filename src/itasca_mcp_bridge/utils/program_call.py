@@ -44,6 +44,7 @@ import os
 import re
 from typing import Any, Callable, List, Optional
 
+from .command_log import flush_live_capture
 from .command_splitter import split_engine_commands
 
 logger = logging.getLogger("itasca-mcp-bridge")
@@ -235,20 +236,31 @@ def expand_program_call(cmd, run):
     if lines is None:
         return False
 
-    commands = split_engine_commands("\n".join(lines))
+    # Comments are kept so the file's own stage markers ("; --- loading")
+    # still show up in the task log where the engine would have echoed them.
+    entries = split_engine_commands("\n".join(lines), keep_comments=True)
     display = os.path.basename(path)
-    print("[bridge] program call '{}': {} command(s) run inline".format(display, len(commands)))
+    n_commands = sum(1 for e in entries if not e.startswith(";"))
+    print("[bridge] program call '{}': {} command(s) run inline".format(display, n_commands))
 
     _dir_stack.append(os.path.dirname(os.path.abspath(path)))
     try:
-        for command in commands:
-            if _RETURN_RE.match(command):
+        for entry in entries:
+            if entry.startswith(";"):
+                print(entry)
+                continue
+            if _RETURN_RE.match(entry):
                 break
             try:
-                run(command)
+                run(entry)
             except Exception as e:
-                _annotate(e, display, command)
+                _annotate(e, display, entry)
                 raise
+            finally:
+                # The whole file runs beneath ONE capture-patched command;
+                # without this its console output would only reach the
+                # task log when the file finishes.
+                flush_live_capture()
     finally:
         _dir_stack.pop()
     return True

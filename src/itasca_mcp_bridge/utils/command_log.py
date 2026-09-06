@@ -119,6 +119,41 @@ def _patched(cmd):
                 logger.warning("capture_engine_console: stdout write failed: %s", e)
 
 
+def flush_live_capture():
+    # type: () -> bool
+    """Flush the innermost scope's live log session to its sink, then
+    restart it, so output produced so far reaches the task log now.
+
+    For callers that run several engine commands *inside* one wrapped
+    ``itasca.command`` — the ``program call`` expander feeds a whole
+    data file through the interrupt wrapper beneath ``_patched`` — and
+    would otherwise deliver the file's entire console output in one
+    chunk when the outer command returns. Calling this after each inner
+    command restores per-command delivery.
+
+    Restarting with ``truncate`` means the outer ``_patched`` reads
+    nothing it has not already written when it closes the session.
+    No-op (returns False) when no capture scope is mid-command.
+    """
+    if not _stack:
+        return False
+    ctx = _stack[-1]
+    if not ctx.in_command:
+        return False
+    _orig_command("program log off")
+    chunk = _read_and_strip(ctx.log_path)
+    if chunk:
+        try:
+            ctx.sink.write(chunk)
+        except Exception as e:
+            logger.warning("capture_engine_console: stdout write failed: %s", e)
+    if _in_cycle_callback():
+        _orig_command("program log on truncate")
+    else:
+        _orig_command("program log on truncate show-message off")
+    return True
+
+
 @contextmanager
 def capture_engine_console(stdout_sink, log_dir):
     # type: (object, str) -> object
