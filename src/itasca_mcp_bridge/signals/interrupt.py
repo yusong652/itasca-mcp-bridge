@@ -24,10 +24,207 @@ import logging
 from typing import Any, Optional
 
 from .positions import INTERRUPT_CALLBACK_POSITION, EXECUTOR_CALLBACK_POSITION, register_cycle_callback
+from ..utils.command_log import live_capture_paused
 from ..utils.program_call import expand_program_call
 
 # Module logger
 logger = logging.getLogger("itasca-mcp-bridge")
+
+
+def _in_cycle_callback():
+    # type: () -> bool
+    """True while an execute_code snippet is running in the cycle callback."""
+    try:
+        from .cycle_executor import in_cycle_callback
+    except ImportError:
+        return False
+    return in_cycle_callback()
+
+
+# =============================================================================
+# Cycling Resume After a Callback Command Error (PFC 6)
+# =============================================================================
+#
+# On PFC 6 any engine command that fails inside a cycle callback makes the
+# engine abort the cycling that callback interrupted: the task's running
+# `model cycle` / `model solve` returns at that cycle with no "limit met"
+# line, the script's itasca.command() returns normally and the task ends
+# `completed` with the cycles silently missing (a `model solve` looks like
+# it converged). Bridge 0.4.4 removed the bridge's own trigger for this
+# (the `show-message` keyword); a mistyped command sent through
+# execute_code while the task cycles takes the same path, and nothing on
+# the snippet side prevents it -- the abort happens whether or not the
+# snippet catches the exception. Verified live on PFC3D 6.00.030,
+# 2026-09-06; PFC 7.00.161 keeps cycling and is unaffected.
+#
+# The wrapped itasca.command sees both sides: the snippet's failing
+# command (inside the callback, depth > 0) and the task's cycling command
+# (the outer call, which the callback is nested in). The inner failure is
+# recorded with the engine's cycle count; when the outer cycling command
+# returns at exactly that cycle, the engine aborted it and the wrapper
+# re-issues the remainder. On engines that keep cycling the outer command
+# returns later and nothing is re-issued.
+
+# Monotonic count of engine command failures raised inside a cycle
+# callback, and the cycle count at the latest one. The outer cycling
+# command compares the count before/after its engine call, so the
+# snippet's later commands (its own capture control, or a command it
+# runs after catching the failure) cannot mask the failure.
+_callback_failure_seq = 0
+_callback_failure_cycle = None  # type: Optional[int]
+_callback_failure_command = ""
+
+# `model cycle <n> [rest]` -- the count is the only relative limit.
+_MODEL_CYCLE_RE = re.compile(r"^\s*mo\w*\s+cy\w*\s+(\d+)(.*)$", re.IGNORECASE | re.DOTALL)
+# `model solve ...`
+_MODEL_SOLVE_RE = re.compile(r"^\s*mo\w*\s+so\w*(?:\s|$)", re.IGNORECASE)
+# A solve's relative `cycles <i>` limit ("during this solve operation"),
+# in any process scope. `cycles-total` is absolute and must not match:
+# the hyphen breaks the required whitespace after the keyword letters.
+_SOLVE_CYCLES_RE = re.compile(r"(?<![\w-])(cy[a-z]*)(\s+)(\d+)", re.IGNORECASE)
+# Relative limits the bridge cannot rewrite from the cycle count (`time`,
+# `clock`) and the stateful two-step `elastic` solve. `time-total` is
+# absolute and does not match (same hyphen rule).
+_SOLVE_NOT_RESUMABLE_RE = re.compile(r"(?<![\w-])(ti[a-z]*|cl[a-z]*|el[a-z]*)(?![\w-])", re.IGNORECASE)
+# Bound on resumes per outer command; each needs a fresh callback failure.
+_MAX_RESUMES = 100
+
+
+def _engine_cycle(itasca_module):
+    # type: (Any) -> Optional[int]
+    """The engine's cycle count, or None when the module cannot report it."""
+    cycle = getattr(itasca_module, "cycle", None)
+    if cycle is None:
+        return None
+    try:
+        return int(cycle())
+    except Exception:
+        return None
+
+
+def _note_callback_command_failure(itasca_module, cmd, exc):
+    # type: (Any, str, BaseException) -> None
+    """Record an engine command failure raised inside the cycle callback
+    and tell the snippet's caller what may have happened to the task."""
+    global _callback_failure_seq, _callback_failure_cycle, _callback_failure_command
+    _callback_failure_seq += 1
+    _callback_failure_cycle = _engine_cycle(itasca_module)
+    _callback_failure_command = cmd.strip().split("\n", 1)[0]
+    logger.warning(
+        "Engine command failed inside the cycle callback at cycle %s: %s",
+        _callback_failure_cycle, _callback_failure_command,
+    )
+    try:
+        note = (
+            "\n    [bridge] This command failed inside the cycle callback of a "
+            "running task. Engines that abort cycling on a callback command "
+            "error (PFC 6) stop the task's current model cycle/solve here; "
+            "the bridge re-issues the remainder and notes it in the task log."
+        )
+        if exc.args and isinstance(exc.args[0], str):
+            exc.args = (exc.args[0] + note,) + tuple(exc.args[1:])
+    except Exception:
+        pass
+
+
+def _resume_command(cmd, cycles_done):
+    # type: (str, int) -> Optional[str]
+    """
+    The command that continues ``cmd`` after ``cycles_done`` of its cycles.
+
+    Returns None when ``cmd`` is not a cycling command, when its relative
+    limits are already met, or when it carries limits the bridge cannot
+    rewrite from the cycle count (``time``, ``clock``, ``elastic``).
+    """
+    m = _MODEL_CYCLE_RE.match(cmd)
+    if m:
+        remaining = int(m.group(1)) - cycles_done
+        if remaining <= 0:
+            return None
+        head = cmd[: m.start(1)]
+        return "{}{}{}".format(head, remaining, m.group(2))
+    if not _MODEL_SOLVE_RE.match(cmd):
+        return None
+    if _SOLVE_NOT_RESUMABLE_RE.search(cmd):
+        return None
+    exhausted = [False]
+
+    def _rewrite(match):
+        remaining = int(match.group(3)) - cycles_done
+        if remaining <= 0:
+            exhausted[0] = True
+            remaining = 0
+        return "{}{}{}".format(match.group(1), match.group(2), remaining)
+
+    rewritten = _SOLVE_CYCLES_RE.sub(_rewrite, cmd)
+    if exhausted[0]:
+        return None
+    return rewritten
+
+
+def _echo_task_log(line):
+    # type: (str) -> None
+    """Print a bridge line into the task log, outside the live capture
+    session (PFC 6 would log the console copy and deliver it twice)."""
+    try:
+        with live_capture_paused():
+            print(line)
+            _sys_stdout_flush()
+    except Exception:
+        pass
+
+
+def _sys_stdout_flush():
+    # type: () -> None
+    import sys
+    sys.stdout.flush()
+
+
+def _resume_if_aborted(itasca_module, run, cmd, start_cycle, seq_before):
+    # type: (Any, Any, str, Optional[int], int) -> None
+    """
+    Re-issue the remainder of a cycling command the engine aborted.
+
+    Called after the outer (task-level) ``cmd`` returned. A callback
+    command failure recorded during it, with the engine now sitting at
+    that failure's cycle, means the engine aborted ``cmd`` there.
+    Loops, since the re-issued command can be aborted the same way. A
+    pending task interrupt takes precedence at every step.
+    """
+    if _in_cycle_callback():
+        return
+    if not (_MODEL_CYCLE_RE.match(cmd) or _MODEL_SOLVE_RE.match(cmd)):
+        return
+    resumes = 0
+    while _callback_failure_seq > seq_before and resumes < _MAX_RESUMES:
+        seq_before = _callback_failure_seq
+        now = _engine_cycle(itasca_module)
+        if start_cycle is None or now is None or now != _callback_failure_cycle:
+            # Cycle count unavailable, or the engine kept cycling past
+            # the failure (PFC 7+): nothing was aborted.
+            return
+        first = cmd.strip().split("\n", 1)[0]
+        resume = _resume_command(cmd, now - start_cycle)
+        if resume is None:
+            _echo_task_log(
+                "[bridge] cycling stopped at cycle {}: the engine aborted `{}` "
+                "after an execute_code command failed in the cycle callback "
+                "(`{}`). Not resumed: its limits are met, or it carries "
+                "time/clock/elastic limits the bridge cannot rewrite; "
+                "re-issue it if the run is short.".format(now, first, _callback_failure_command)
+            )
+            return
+        _echo_task_log(
+            "[bridge] cycling stopped at cycle {}: the engine aborted `{}` "
+            "after an execute_code command failed in the cycle callback "
+            "(`{}`); resuming with `{}`.".format(now, first, _callback_failure_command, resume)
+        )
+        resumes += 1
+        _pfc_interrupt_check()
+        run(resume)
+        _pfc_interrupt_check()
+        cmd = resume
+        start_cycle = now
 
 
 # =============================================================================
@@ -247,11 +444,7 @@ def _re_register_callback(itasca_module, position=INTERRUPT_CALLBACK_POSITION):
     # model-reset repair hook). Skipping is safe: the wiped registry is
     # repaired by ensure_cycle_callbacks() at the next execution entry point,
     # and the cycle the reset interrupted is finished either way.
-    try:
-        from .cycle_executor import in_cycle_callback
-    except ImportError:
-        in_cycle_callback = None  # type: ignore[assignment]
-    if in_cycle_callback is not None and in_cycle_callback():
+    if _in_cycle_callback():
         logger.warning(
             "Model reset inside a cycle callback: deferring callback "
             "re-registration to the next execution entry point"
@@ -416,9 +609,20 @@ def register_interrupt_callback(itasca_module, position=INTERRUPT_CALLBACK_POSIT
             checked = _LOG_CONTROL_RE.match(cmd) is None
             if checked:
                 _pfc_interrupt_check()
-            result = _original_command(cmd)
+            seq_before = _callback_failure_seq
+            start_cycle = _engine_cycle(itasca_module) if checked else None
+            try:
+                result = _original_command(cmd)
+            except Exception as e:
+                # A failing command inside the cycle callback makes PFC 6
+                # abort the cycling it interrupted (see the resume section
+                # above); record it for the outer cycling command.
+                if _in_cycle_callback() and not isinstance(e, InterruptedError):
+                    _note_callback_command_failure(itasca_module, cmd, e)
+                raise
             if checked:
                 _pfc_interrupt_check()
+                _resume_if_aborted(itasca_module, _original_command, cmd, start_cycle, seq_before)
             # Check if command resets model (clears callback registry).
             # Scan every line: a multi-line batch can carry the reset
             # command mid-string (e.g. via the unsplit execute_code
