@@ -42,9 +42,10 @@ Python 3.6 compatible implementation.
 import logging
 import os
 import re
+import sys
 from typing import Any, Callable, List, Optional
 
-from .command_log import flush_live_capture
+from .command_log import flush_live_capture, live_capture_paused
 from .command_splitter import split_engine_commands
 
 logger = logging.getLogger("itasca-mcp-bridge")
@@ -241,13 +242,13 @@ def expand_program_call(cmd, run):
     entries = split_engine_commands("\n".join(lines), keep_comments=True)
     display = os.path.basename(path)
     n_commands = sum(1 for e in entries if not e.startswith(";"))
-    print("[bridge] program call '{}': {} command(s) run inline".format(display, n_commands))
+    _echo("[bridge] program call '{}': {} command(s) run inline".format(display, n_commands))
 
     _dir_stack.append(os.path.dirname(os.path.abspath(path)))
     try:
         for entry in entries:
             if entry.startswith(";"):
-                print(entry)
+                _echo(entry)
                 continue
             if _RETURN_RE.match(entry):
                 break
@@ -264,6 +265,19 @@ def expand_program_call(cmd, run):
     finally:
         _dir_stack.pop()
     return True
+
+
+def _echo(line):
+    # type: (str) -> None
+    """Print a bridge/comment line while the capture session is paused.
+
+    The expander runs beneath one live log session; PFC 6 would log the
+    console copy of this print and the capture would deliver it a second
+    time (see ``live_capture_paused``).
+    """
+    with live_capture_paused():
+        print(line)
+        sys.stdout.flush()
 
 
 def _annotate(exc, display, command):

@@ -237,6 +237,39 @@ class TestOutputFidelity:
         assert out[0].startswith("[bridge] program call 'c.p3dat': 2 command(s)")
         assert out[1:] == ["; stage 1", "; stage 2"]
 
+    def test_header_and_comments_printed_with_capture_paused(self, tmp_path, monkeypatch):
+        # PFC 6 logs console prints into the live `program log` session,
+        # so bridge/comment lines must be printed while the session is
+        # paused or the task log gets them twice.
+        from contextlib import contextmanager
+
+        _write(tmp_path / "c.p3dat", "; stage 1\nball create id 1\n; stage 2\n")
+        events = []
+
+        @contextmanager
+        def paused():
+            events.append("pause")
+            yield True
+            events.append("resume")
+
+        monkeypatch.setattr(pc, "live_capture_paused", paused)
+        monkeypatch.setattr(pc, "flush_live_capture", lambda: events.append("flush"))
+        monkeypatch.setattr(pc, "print", lambda line: events.append(line), raising=False)
+        expand_program_call("program call 'c.p3dat'", lambda c: events.append(c))
+        assert events == [
+            "pause",
+            "[bridge] program call 'c.p3dat': 1 command(s) run inline",
+            "resume",
+            "pause",
+            "; stage 1",
+            "resume",
+            "ball create id 1",
+            "flush",
+            "pause",
+            "; stage 2",
+            "resume",
+        ]
+
     def test_capture_flushed_after_each_command(self, tmp_path, monkeypatch):
         _write(tmp_path / "f.p3dat", "ball create id 1\nball create id 2\n")
         events = []
