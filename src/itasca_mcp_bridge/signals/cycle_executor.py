@@ -84,6 +84,21 @@ def submit_snippet(code, request_id):
 # ITASCA Callback Function (Executed in main thread during cycle gaps)
 # =============================================================================
 
+# Depth of executor-callback execution on the ITASCA main thread. Read by
+# ``signals.interrupt._re_register_callback``: mutating the engine's
+# cycle-callback registry from inside a cycle callback hard-crashes the
+# process (PFC3D 6.00.030 exits on the spot, verified 2026-09-06), and a
+# snippet running here can issue a `model new` whose repair hook would do
+# exactly that. A list keeps the counter cheap and rebind-free.
+_callback_depth = [0]
+
+
+def in_cycle_callback():
+    # type: () -> bool
+    """True while a snippet is executing inside the executor's cycle callback."""
+    return _callback_depth[0] > 0
+
+
 def _run_pending_snippet(code, request_id, future):
     # type: (str, str, Future) -> None
     """
@@ -138,7 +153,11 @@ def _pfc_executor_callback():
         except Empty:
             break
 
-        _run_pending_snippet(code, request_id, future)
+        _callback_depth[0] += 1
+        try:
+            _run_pending_snippet(code, request_id, future)
+        finally:
+            _callback_depth[0] -= 1
         executed += 1
 
     if executed > 0:

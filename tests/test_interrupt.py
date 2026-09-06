@@ -304,6 +304,53 @@ class TestCommandBoundaryInterrupt:
             clear_current_task()
 
 
+class TestNoRegistryMutationInCycleCallback:
+    """Mutating the engine's cycle-callback registry from inside a cycle
+    callback hard-crashes the process (PFC3D 6.00.030 exits on the spot).
+    A snippet delivered through the executor callback can issue a
+    `model new`, whose repair hook would otherwise do exactly that."""
+
+    def _registered_fake(self) -> _FakeItasca:
+        from itasca_mcp_bridge.signals.interrupt import register_interrupt_callback
+
+        fake = _FakeItasca()
+        assert register_interrupt_callback(fake) is True
+        return fake
+
+    @staticmethod
+    def _interrupt_registrations(fake: _FakeItasca) -> int:
+        return sum(1 for name, _ in fake.set_calls if name == "_pfc_interrupt_check")
+
+    def test_reset_inside_callback_defers_re_registration(self, monkeypatch):
+        from itasca_mcp_bridge.signals import cycle_executor
+
+        fake = self._registered_fake()
+        base = self._interrupt_registrations(fake)
+        monkeypatch.setattr(cycle_executor, "_callback_depth", [1])
+        fake.command("model new")
+        assert fake.commands == ["model new"]  # the command still runs
+        assert self._interrupt_registrations(fake) == base  # registry untouched
+
+    def test_reset_outside_callback_still_re_registers(self, monkeypatch):
+        from itasca_mcp_bridge.signals import cycle_executor
+
+        fake = self._registered_fake()
+        base = self._interrupt_registrations(fake)
+        monkeypatch.setattr(cycle_executor, "_callback_depth", [0])
+        fake.command("model new")
+        assert self._interrupt_registrations(fake) == base + 1
+
+    def test_ensure_cycle_callbacks_is_a_noop_inside_callback(self, monkeypatch):
+        from itasca_mcp_bridge.signals import cycle_executor
+        from itasca_mcp_bridge.signals.interrupt import ensure_cycle_callbacks
+
+        fake = self._registered_fake()
+        base = self._interrupt_registrations(fake)
+        monkeypatch.setattr(cycle_executor, "_callback_depth", [1])
+        ensure_cycle_callbacks()
+        assert self._interrupt_registrations(fake) == base
+
+
 class _RegistryFakeItasca:
     """itasca stand-in with an actual cycle-callback registry, so a test
     can simulate a `model new` issued OUTSIDE the wrapped Python
