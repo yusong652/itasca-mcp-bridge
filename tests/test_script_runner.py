@@ -73,3 +73,15 @@ def test_success_path_unaffected(itasca_stub):
     result = _run("result = 41 + 1", "task-ok")
     assert result["status"] == "success"
     assert result["result"] == 42
+
+
+def test_script_entry_repairs_cycle_callbacks(itasca_stub, monkeypatch):
+    # Task scripts always come through the idle queue, so the registry
+    # repair runs unconditionally before the script body.
+    import itasca_mcp_bridge.execution.script as script_mod
+
+    calls = []
+    monkeypatch.setattr(script_mod, "ensure_cycle_callbacks", lambda: calls.append(1) or True)
+    result = _run("x = 1", "task-repair")
+    assert result["status"] == "success"
+    assert calls == [1]

@@ -157,3 +157,43 @@ class TestTaskIdSaveRestore:
         run_snippet("1 + 1", StringIO(), request_id="inner-req")
         assert check_interrupt("outer-task")
         assert peek_current_task() == "outer-task"
+
+
+class TestEntryPointCallbackRepair:
+    """The idle queue path must repair the cycle-callback registry before
+    user code runs; the cycle-gap callback path must not (it is already
+    inside a live callback)."""
+
+    def test_queue_path_repairs_by_default(self, itasca_stub, monkeypatch):
+        import itasca_mcp_bridge.execution.snippet as snippet_mod
+
+        calls = []
+        monkeypatch.setattr(snippet_mod, "ensure_cycle_callbacks", lambda: calls.append(1) or True)
+        run_snippet("1 + 1", StringIO())
+        assert calls == [1]
+
+    def test_opt_out_skips_repair(self, itasca_stub, monkeypatch):
+        import itasca_mcp_bridge.execution.snippet as snippet_mod
+
+        calls = []
+        monkeypatch.setattr(snippet_mod, "ensure_cycle_callbacks", lambda: calls.append(1) or True)
+        run_snippet("1 + 1", StringIO(), ensure_callbacks=False)
+        assert calls == []
+
+    def test_callback_path_opts_out(self, itasca_stub, monkeypatch):
+        from concurrent.futures import Future
+
+        import itasca_mcp_bridge.execution.snippet as snippet_mod
+        from itasca_mcp_bridge.signals.cycle_executor import _run_pending_snippet
+
+        seen = {}
+
+        def fake_run_snippet(code, output_buffer, request_id=None, ensure_callbacks=True):
+            seen["ensure_callbacks"] = ensure_callbacks
+            return {"status": "success", "message": "", "output": "", "result": None}
+
+        monkeypatch.setattr(snippet_mod, "run_snippet", fake_run_snippet)
+        fut: Future = Future()
+        _run_pending_snippet("1 + 1", "req-cb", fut)
+        assert fut.result()["status"] == "success"
+        assert seen["ensure_callbacks"] is False

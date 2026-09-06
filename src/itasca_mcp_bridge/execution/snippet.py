@@ -43,6 +43,7 @@ from ..signals import (
     clear_interrupt,
     register_exec_thread,
     unregister_exec_thread,
+    ensure_cycle_callbacks,
 )
 from .termination import BridgeTimeout
 
@@ -53,8 +54,8 @@ logger = logging.getLogger("itasca-mcp-bridge")
 SNIPPET_LABEL = "<execute_code>"
 
 
-def run_snippet(code, output_buffer, request_id=None):
-    # type: (str, Any, Optional[str]) -> Dict[str, Any]
+def run_snippet(code, output_buffer, request_id=None, ensure_callbacks=True):
+    # type: (str, Any, Optional[str], bool) -> Dict[str, Any]
     """
     Compile and execute ``code`` against the ITASCA ``__main__`` namespace.
 
@@ -71,12 +72,22 @@ def run_snippet(code, output_buffer, request_id=None):
             this thread is registered so the handler can target
             ``PyThreadState_SetAsyncExc`` here; the same id doubles as
             the L1 interrupt-flag key.
+        ensure_callbacks: Re-register the bridge's cycle callbacks before
+            running (see ``signals.ensure_cycle_callbacks``). True on the
+            idle queue path, where a ``model new`` issued outside the
+            Python ``itasca.command`` (GUI console, File menu, a
+            ``program call`` script) may have left the registry empty.
+            The cycle-gap callback path passes False: it is already
+            running inside a live callback.
 
     Returns:
         Dict with ``status`` (``"success"`` / ``"error"`` /
         ``"terminated"`` / ``"interrupted"``), ``message``, ``output``,
         and ``result``.
     """
+    if ensure_callbacks:
+        ensure_cycle_callbacks()
+
     old_stdout = sys.stdout
     terminal = sys.__stdout__ if sys.__stdout__ is not None else old_stdout
     sys.stdout = TeeBuffer(terminal, output_buffer)

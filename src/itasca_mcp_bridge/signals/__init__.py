@@ -15,6 +15,7 @@ from .interrupt import (
     clear_current_task,
     peek_current_task,
     register_interrupt_callback,
+    ensure_cycle_callbacks,
     register_exec_thread,
     unregister_exec_thread,
     get_exec_thread,
@@ -34,6 +35,7 @@ __all__ = [
     "clear_current_task",
     "peek_current_task",
     "register_interrupt_callback",
+    "ensure_cycle_callbacks",
     # Exec-thread registry (execute_code async-exc termination)
     "register_exec_thread",
     "unregister_exec_thread",

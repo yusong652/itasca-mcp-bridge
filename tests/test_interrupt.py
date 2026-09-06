@@ -188,3 +188,88 @@ class TestModelResetReRegistration:
         base = self._interrupt_registrations(fake)
         fake.command("plot clear\nmodel restore 'sample.p3sav'")
         assert self._interrupt_registrations(fake) == base + 1
+
+
+class _RegistryFakeItasca:
+    """itasca stand-in with an actual cycle-callback registry, so a test
+    can simulate a `model new` issued OUTSIDE the wrapped Python
+    itasca.command (GUI console, File menu, `program call` script):
+    the engine wipes the registry and no repair hook ever sees it."""
+
+    def __init__(self, strict=False):
+        self.registry: set[tuple[str, float]] = set()
+        self.strict = strict
+
+    def set_callback(self, name, position):
+        key = (name, position)
+        if self.strict and key in self.registry:
+            raise ValueError("already registered")
+        self.registry.add(key)
+
+    def remove_callback(self, name, position):
+        self.registry.discard((name, position))
+
+    def command(self, cmd):
+        pass
+
+    def wipe(self):
+        # What the engine does on model new / model restore.
+        self.registry.clear()
+
+
+class TestEnsureCycleCallbacks:
+    """ensure_cycle_callbacks() is the entry-point bedrock repair: it
+    must bring the registry back regardless of who emptied it, and must
+    be a no-op-with-False when the bridge was never started."""
+
+    def test_returns_false_before_registration(self, monkeypatch):
+        from itasca_mcp_bridge.signals.interrupt import ensure_cycle_callbacks
+
+        monkeypatch.setattr(interrupt_mod, "_itasca_module", None)
+        assert ensure_cycle_callbacks() is False
+
+    def test_repairs_registry_wiped_outside_python(self):
+        from itasca_mcp_bridge.signals.interrupt import (
+            ensure_cycle_callbacks,
+            register_interrupt_callback,
+        )
+        from itasca_mcp_bridge.signals.positions import INTERRUPT_CALLBACK_POSITION
+
+        fake = _RegistryFakeItasca()
+        assert register_interrupt_callback(fake) is True
+        key = ("_pfc_interrupt_check", INTERRUPT_CALLBACK_POSITION)
+        assert key in fake.registry
+
+        fake.wipe()  # GUI-console `model new`: no wrapped command, no repair
+        assert key not in fake.registry
+
+        assert ensure_cycle_callbacks() is True
+        assert key in fake.registry
+
+    def test_idempotent_on_strict_engine(self):
+        # PFC 6 raises on a duplicate set_callback; remove-first keeps
+        # the unconditional re-registration safe when nothing was wiped.
+        from itasca_mcp_bridge.signals.interrupt import (
+            ensure_cycle_callbacks,
+            register_interrupt_callback,
+        )
+
+        fake = _RegistryFakeItasca(strict=True)
+        assert register_interrupt_callback(fake) is True
+        assert ensure_cycle_callbacks() is True
+        assert ensure_cycle_callbacks() is True
+
+    def test_engine_rejection_is_swallowed(self):
+        from itasca_mcp_bridge.signals.interrupt import (
+            ensure_cycle_callbacks,
+            register_interrupt_callback,
+        )
+
+        fake = _RegistryFakeItasca()
+        assert register_interrupt_callback(fake) is True
+
+        def boom(name, position):
+            raise RuntimeError("engine busy")
+
+        fake.set_callback = boom  # type: ignore[method-assign]
+        assert ensure_cycle_callbacks() is False  # logged, never raised

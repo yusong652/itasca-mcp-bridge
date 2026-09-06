@@ -93,11 +93,15 @@ def _run_pending_snippet(code, request_id, future):
     callback path and the queue path share identical semantics, and
     passes ``request_id`` so the timeout handler can target this
     thread via ``PyThreadState_SetAsyncExc``.
+
+    ``ensure_callbacks=False``: this runs inside the executor callback,
+    so the cycle-callback registry is live by definition, and it must
+    not be mutated from within a callback.
     """
     from ..execution.snippet import run_snippet
 
     try:
-        result = run_snippet(code, StringIO(), request_id=request_id)
+        result = run_snippet(code, StringIO(), request_id=request_id, ensure_callbacks=False)
         future.set_result(result)
     except BaseException as e:
         # ``run_snippet`` catches BaseException internally; this is
