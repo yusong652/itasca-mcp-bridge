@@ -78,6 +78,15 @@ ANNOUNCEMENTS = {
         "longer crashes the engine; interrupting a task keeps its captured "
         "output and leaves the next task's log clean.",
     ),
+    "0.5.3": (
+        "Fixed the bridge going silent for the whole length of a cycling "
+        "command when the model was reset earlier in the same run: spellings "
+        "the engine accepts ('mod new', 'model  new', 'model re ...') slipped "
+        "past the callback repair, and every tool then timed out with the task "
+        "uninterruptible until the command finished on its own.",
+        "Callbacks are now repaired before every engine command instead of by "
+        "matching command text. Verified on PFC 6, 7 and 9.",
+    ),
 }
 
 

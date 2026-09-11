@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-09-11
+
 ### Fixed
 - The bridge no longer goes unreachable for the duration of a cycling
   command when the model was reset earlier in the same execution. The
