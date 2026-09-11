@@ -235,8 +235,35 @@ def start(
     if not server_thread.is_alive():
         raise RuntimeError("Bridge server thread failed to start")
 
+    # ── Main-thread task pump ─────────────────────────────────
+    # Started before the banner so the banner can state which pump won.
+    # It cannot move after: the blocking pump never returns, so anything
+    # printed below it would never reach a console-mode user.
+    use_qt = mode in ("auto", "gui")
+    use_blocking = mode in ("auto", "console")
+
+    qt_running = bool(
+        use_qt and _start_qt_pump(main_executor, interval_ms, max_tasks_per_tick, logger)
+    )
+    if qt_running:
+        itasca_server.set_runtime_mode("gui")
+    elif mode == "gui":
+        # Raise before the banner: a failed start should not print one.
+        raise RuntimeError("Qt is not available; cannot start in gui mode")
+    elif use_blocking:
+        itasca_server.set_runtime_mode("console")
+
     # ── Status display ────────────────────────────────────────
+    # The reader is sitting in the GUI of the engine this bridge is attached
+    # to, so anything they can already see is noise. Facts about this start
+    # that they cannot see go in the banner; everything else -- the engine
+    # binary, where the package was imported from, pump tuning -- goes to
+    # bridge.log, where INFO lands (the stdout handler is WARNING and up).
     upgraded_from = os.environ.pop(ENV_UPGRADED_FROM, None)
+
+    logger.info("Engine: %s", sys.executable)
+    logger.info("Package: %s", os.path.dirname(os.path.abspath(__file__)))
+    logger.info("Pump: interval=%sms, max_tasks_per_tick=%s", interval_ms, max_tasks_per_tick)
 
     print("\n" + "=" * 60)
     print("Itasca MCP Bridge Server")
@@ -246,6 +273,7 @@ def start(
         print("  Upgraded: {} -> {}".format(upgraded_from, __version__))
     print("  URL:      http://{}:{}".format(host, port))
     print("  Log:      {}".format(log_file))
+    print("  Mode:     {}".format("Qt timer" if qt_running else "blocking poll"))
     print("=" * 60 + "\n")
 
     if upgraded_from:
@@ -257,21 +285,9 @@ def start(
         except Exception:
             pass
 
-    # ── Main-thread task pump ─────────────────────────────────
-    use_qt = mode in ("auto", "gui")
-    use_blocking = mode in ("auto", "console")
-
-    if use_qt and _start_qt_pump(main_executor, interval_ms, max_tasks_per_tick, logger):
-        itasca_server.set_runtime_mode("gui")
-        print("Task loop running via Qt timer (interval={}ms, max_tasks_per_tick={})".format(
-            interval_ms, max_tasks_per_tick))
+    if qt_running:
         return
 
-    if mode == "gui":
-        raise RuntimeError("Qt is not available; cannot start in gui mode")
-
     if use_blocking:
-        itasca_server.set_runtime_mode("console")
-        print("Task loop running via blocking poll (interval={}ms)".format(interval_ms))
         print("Bridge started in blocking mode (console). Press Ctrl+C to stop.")
         _run_blocking_pump(main_executor, interval_ms, max_tasks_per_tick, logger)

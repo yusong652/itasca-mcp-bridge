@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.5.3] - 2026-09-11
 
+### Changed
+- The startup banner now carries the task-loop mode as a field
+  (`Mode: Qt timer` / `Mode: blocking poll`) instead of a loose line
+  printed after it, and no longer prints the pump's `interval` and
+  `max_tasks_per_tick` — tuning internals nobody reading a startup
+  banner acts on. They, the engine binary and the directory the package
+  was imported from are logged to `bridge.log` instead, where they are
+  useful for diagnosis. The pump is now started before the banner so the
+  banner can state which one won; a `mode="gui"` start with no Qt
+  available now raises before printing a banner rather than after.
+
 ### Fixed
 - The bridge no longer goes unreachable for the duration of a cycling
   command when the model was reset earlier in the same execution. The
