@@ -4,6 +4,42 @@ All notable changes to `itasca-mcp-bridge` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- The bridge no longer goes unreachable for the duration of a cycling
+  command when the model was reset earlier in the same execution. The
+  cycle callbacks are the only window into a running engine — it holds
+  the GIL for the whole C call, so with an empty registry every bridge
+  thread is frozen, HTTP included: `execute_code`, `check_task_status`,
+  `interrupt_task` and the SSE stream all time out (the MCP side reports
+  `bridge_unavailable`), and the task cannot be interrupted at all until
+  the command returns on its own. Measured on PFC3D 6.00.030: a data file
+  doing an abbreviated `mod new` and then `model solve fish-halt` froze
+  the whole bridge for 76s, and the `interrupt_task` request never even
+  registered.
+
+  The registry is now re-registered before every engine command instead
+  of after commands matching `model new` / `model restore`. That literal
+  match never covered the real input space: the engine accepts
+  abbreviations and arbitrary inner whitespace, so `mod new`, `mode new`,
+  `model n`, `model ne`, `model  new`, `model<TAB>new`, `model re 'f'`
+  and `model rest 'f'` all reset the model and all slipped past it — and
+  resets that never reach the wrapper at all (typed in the GUI console,
+  run from the File menu, issued inside a FISH `command` block) had no
+  spelling that would have worked. The engine exposes no way to query the
+  registry, so repairing unconditionally is the only option that closes
+  the class. It costs 6–19 µs against 11–39 ms for the most trivial
+  `itasca.command` on the same engine — at most 0.1%, measured on PFC
+  6.00.030, 7.00.161 and 9.7. Commands running inside a cycle callback
+  still skip it — mutating the live registry there crashes the engine.
+
+  Verified on all three engines: every listed spelling resets the model
+  on each, and after the fix the data file that used to freeze the bridge
+  stays reachable throughout, interrupts in about a second, and an engine
+  command issued from inside the cycle callback returns with the process
+  alive.
+
 ## [0.5.2] - 2026-09-06
 
 ### Fixed

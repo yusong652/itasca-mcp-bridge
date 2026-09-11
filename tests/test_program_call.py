@@ -237,8 +237,9 @@ class TestExpand:
 
     def test_wrapped_command_integration(self, tmp_path):
         # Through the real wrapper: each file line is an itasca.command
-        # boundary, so the model-reset repair hook fires for `model new`
-        # inside the file.
+        # boundary, so each gets the pre-dispatch re-registration. That is
+        # what keeps `model cycle` reachable after a `model new` earlier in
+        # the same file — the whole point of expanding the call inline.
         from itasca_mcp_bridge.signals.interrupt import register_interrupt_callback
 
         class Fake:
@@ -261,7 +262,9 @@ class TestExpand:
         base = fake.set_calls.count("_pfc_interrupt_check")
         fake.command("program call 'run.p3dat'")
         assert fake.commands == ["model new", "model cycle 10"]
-        assert fake.set_calls.count("_pfc_interrupt_check") == base + 1
+        # One per expanded command; the `program call` line itself is
+        # consumed by the expander and never reaches the engine.
+        assert fake.set_calls.count("_pfc_interrupt_check") == base + 2
 
 
 class TestOutputFidelity:

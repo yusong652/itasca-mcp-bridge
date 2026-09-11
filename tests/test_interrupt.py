@@ -133,22 +133,35 @@ class _FakeItasca:
     def __init__(self):
         self.set_calls: list[tuple[str, float]] = []
         self.commands: list[str] = []
+        # Ordered trace of both kinds of event, so tests can assert that a
+        # registration happened BEFORE the command it protects.
+        self.events: list[tuple[str, str]] = []
 
     def set_callback(self, name, position):
         self.set_calls.append((name, position))
+        self.events.append(("set", name))
 
     def remove_callback(self, name, position):
         pass
 
     def command(self, cmd):
         self.commands.append(cmd)
+        self.events.append(("cmd", cmd))
 
 
-class TestModelResetReRegistration:
-    """The _wrapped_command hook must re-register the cycle callbacks
-    after any command call that contains `model new`/`model restore` —
-    those clear the engine's callback registry, killing the bridge's
-    busy-time reachability and interrupt support."""
+class TestPreDispatchReRegistration:
+    """_wrapped_command re-registers the cycle callbacks BEFORE handing the
+    engine each command, so a command that cycles always starts with a live
+    registry. Without it the engine holds the GIL for the whole C call with
+    no callback to run: every bridge thread is frozen and the task cannot be
+    interrupted until the command returns on its own.
+
+    This deliberately replaces the old "re-register after a command matching
+    `model new` / `model restore`" hook. That literal match never covered the
+    real input space (see the spelling cases below), and resets that never
+    pass through this wrapper at all — typed in the GUI console, run from the
+    File menu, issued inside a FISH `command` block — had no spelling that
+    would have worked."""
 
     @staticmethod
     def _interrupt_registrations(fake: _FakeItasca) -> int:
@@ -161,33 +174,56 @@ class TestModelResetReRegistration:
         assert register_interrupt_callback(fake) is True
         return fake
 
-    def test_non_reset_command_does_not_re_register(self):
+    def test_registration_precedes_the_command(self):
+        fake = self._registered_fake()
+        fake.events.clear()
+        fake.command("model cycle 100")
+        # The protecting registration must land before the cycling command.
+        assert fake.events[-1] == ("cmd", "model cycle 100")
+        assert ("set", "_pfc_interrupt_check") in fake.events[:-1]
+
+    def test_ordinary_command_re_registers(self):
         fake = self._registered_fake()
         base = self._interrupt_registrations(fake)
         fake.command("model cycle 100")
+        assert self._interrupt_registrations(fake) == base + 1
+
+    @pytest.mark.parametrize(
+        "cmd",
+        [
+            "model new",
+            "mod new",  # `mod` is the shortest accepted form of `model`
+            "mode new",
+            "model n",
+            "model ne",
+            "model  new",  # extra inner whitespace
+            "model\tnew",
+            "MODEL NEW",
+            "model restore 'sample.p3sav'",
+            "model re 'sample.p3sav'",  # shortest accepted form of `restore`
+            "model rest 'sample.p3sav'",
+            "ball delete\nmodel new\nball generate radius 0.1 number 5",
+        ],
+    )
+    def test_every_accepted_reset_spelling_is_covered(self, cmd):
+        # Regression guard: each of these resets the model on PFC 6.00.030,
+        # 7.00.161 and 9.7 (verified live 2026-09-11) and each was missed
+        # by the old `startswith("model new"/"model restore")` check,
+        # leaving the registry dead for the rest of the execution.
+        fake = self._registered_fake()
+        base = self._interrupt_registrations(fake)
+        fake.command(cmd)
+        assert self._interrupt_registrations(fake) > base
+
+    def test_log_control_commands_do_not_re_register(self):
+        # The bridge wraps every user command in its own `program log`
+        # control commands; they never cycle, so they stay off the hot path.
+        fake = self._registered_fake()
+        base = self._interrupt_registrations(fake)
+        fake.command("program log on")
+        fake.command("program log off")
+        fake.command("program log-file 'x.log'")
         assert self._interrupt_registrations(fake) == base
-
-    def test_single_line_reset_re_registers(self):
-        fake = self._registered_fake()
-        base = self._interrupt_registrations(fake)
-        fake.command("model new")
-        assert self._interrupt_registrations(fake) == base + 1
-
-    def test_mid_string_reset_re_registers(self):
-        # The execute_code path is not split by the command splitter, so
-        # a reset command can sit mid-string in a multi-line batch. A
-        # whole-string startswith check used to miss it, leaving the
-        # registry dead until some later first-line match.
-        fake = self._registered_fake()
-        base = self._interrupt_registrations(fake)
-        fake.command("ball delete\nmodel new\nball generate radius 0.1 number 5")
-        assert self._interrupt_registrations(fake) == base + 1
-
-    def test_model_restore_also_re_registers(self):
-        fake = self._registered_fake()
-        base = self._interrupt_registrations(fake)
-        fake.command("plot clear\nmodel restore 'sample.p3sav'")
-        assert self._interrupt_registrations(fake) == base + 1
 
 
 class TestCommandBoundaryInterrupt:
@@ -307,8 +343,8 @@ class TestCommandBoundaryInterrupt:
 class TestNoRegistryMutationInCycleCallback:
     """Mutating the engine's cycle-callback registry from inside a cycle
     callback hard-crashes the process (PFC3D 6.00.030 exits on the spot).
-    A snippet delivered through the executor callback can issue a
-    `model new`, whose repair hook would otherwise do exactly that."""
+    Commands delivered through the executor callback therefore skip the
+    pre-dispatch re-registration that every other command gets."""
 
     def _registered_fake(self) -> _FakeItasca:
         from itasca_mcp_bridge.signals.interrupt import register_interrupt_callback

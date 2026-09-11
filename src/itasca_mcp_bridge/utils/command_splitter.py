@@ -9,8 +9,8 @@ Why one command per call matters (verified live on PFC 6.00.030, 2026-08-04):
   releases the GIL to other threads on its own.
 - ``model new`` / ``model restore`` clear the engine's callback registry.
   The bridge re-registers them via a wrapper around ``itasca.command``
-  (see ``signals.interrupt``), but that repair can only run AFTER a
-  command call returns.
+  (see ``signals.interrupt``), but that repair can only run BETWEEN
+  command calls — never inside one.
 - A multi-line batch containing ``model new`` followed by ``model cycle``
   therefore wipes the registry mid-call and cycles with no callbacks at
   all: the bridge is unreachable and uninterruptible for the whole call.

@@ -433,7 +433,11 @@ def _re_register_callback(itasca_module, position=INTERRUPT_CALLBACK_POSITION):
     """
     Re-register interrupt callback with ITASCA.
 
-    Called after model new/restore commands which clear ITASCA's callback registry.
+    Called before every engine command (see ``_wrapped_command``) and at every
+    execution entry point (see ``ensure_cycle_callbacks``), so that whatever
+    cleared the registry — ``model new`` in any accepted spelling, a reset
+    typed in the GUI console, a FISH ``command`` block — the callbacks are
+    live again before the engine is handed anything that might cycle.
     Also re-registers executor callback if it was registered.
     """
     # Never mutate the registry from inside a cycle callback: the engine is
@@ -441,7 +445,7 @@ def _re_register_callback(itasca_module, position=INTERRUPT_CALLBACK_POSITION):
     # hard-crashes the process (PFC3D 6.00.030 exits on the spot; verified
     # 2026-09-06 with `model new` sent through execute_code while a task was
     # cycling, which reaches this function through _wrapped_command's
-    # model-reset repair hook). Skipping is safe: the wiped registry is
+    # pre-dispatch repair). Skipping is safe: the wiped registry is
     # repaired by ensure_cycle_callbacks() at the next execution entry point,
     # and the cycle the reset interrupted is finished either way.
     if _in_cycle_callback():
@@ -480,15 +484,18 @@ def ensure_cycle_callbacks():
     of a C-level ``itasca.command``; the only windows where the HTTP
     thread, status polls, ``execute_code`` interleaving and interrupt
     can run are the bridge's own Python cycle callbacks. ``model new`` /
-    ``model restore`` wipe the engine's cycle-callback registry, and the
-    ``_wrapped_command`` repair hook only sees resets issued through the
-    Python ``itasca.command`` — a reset typed in the GUI console, run
-    from the File menu, or executed inside a ``program call`` script
-    leaves the registry empty with nothing to repair it. The next
+    ``model restore`` wipe the engine's cycle-callback registry, and a
+    reset typed in the GUI console or run from the File menu between two
+    bridge executions leaves it empty with nothing to repair it. The next
     ``model cycle`` then wedges the whole bridge for its duration.
     There is no engine API to list cycle callbacks, so the entry points
     cannot check; they re-register (remove-then-set, idempotent on every
     engine version) at a cost of two C calls per execution.
+
+    ``_wrapped_command`` does the same before every engine command, which
+    covers resets that happen *during* an execution. This entry-point call
+    covers the gap between executions, and gets the registry live before
+    user code that never goes through ``itasca.command`` at all.
 
     Must not be called from inside a cycle callback (the callback-path
     ``execute_code`` route): the registry is live there by definition,
@@ -509,9 +516,6 @@ def ensure_cycle_callbacks():
         logger.warning("Cycle callback re-registration failed: %s", e)
         return False
 
-
-# Commands that clear ITASCA's callback registry
-_MODEL_RESET_COMMANDS = ("model new", "model restore")
 
 # The bridge's own console-capture control commands (``utils.command_log``
 # wraps every user command in ``program log on`` / ``program log off`` and
@@ -609,6 +613,31 @@ def register_interrupt_callback(itasca_module, position=INTERRUPT_CALLBACK_POSIT
             checked = _LOG_CONTROL_RE.match(cmd) is None
             if checked:
                 _pfc_interrupt_check()
+                # Make sure the cycle callbacks are live BEFORE handing the
+                # engine a command that might cycle. They are the bridge's
+                # only window into a running engine: the engine holds the GIL
+                # for the whole C call, so a cycling command with an empty
+                # registry freezes every bridge thread -- HTTP included --
+                # until it returns on its own. Unreachable AND uninterruptible.
+                #
+                # Re-registering unconditionally rather than pattern-matching
+                # the commands that reset the model: the engine accepts
+                # abbreviations and arbitrary inner whitespace, so a literal
+                # match never covered the real input space (`mod new`,
+                # `model  new`, `model<TAB>new`, `model re 'f'` all reset on
+                # PFC 6.00.030 and all missed the old "model new"/"model
+                # restore" startswith check), and resets that never reach this
+                # wrapper at all -- typed in the GUI console, run from the File
+                # menu, issued inside a FISH `command` block -- were never
+                # covered by any spelling. The engine exposes no way to query
+                # the registry, so "check, then repair" is not available.
+                # Cost measured on PFC3D 6.00.030: remove+set is 12.8 us
+                # against ~11 ms for the most trivial itasca.command (~0.1%).
+                #
+                # Skipped inside a cycle callback: mutating the registry there
+                # hard-crashes the engine (see _re_register_callback).
+                if not _in_cycle_callback():
+                    _re_register_callback(itasca_module, position)
             seq_before = _callback_failure_seq
             start_cycle = _engine_cycle(itasca_module) if checked else None
             try:
@@ -623,16 +652,6 @@ def register_interrupt_callback(itasca_module, position=INTERRUPT_CALLBACK_POSIT
             if checked:
                 _pfc_interrupt_check()
                 _resume_if_aborted(itasca_module, _original_command, cmd, start_cycle, seq_before)
-            # Check if command resets model (clears callback registry).
-            # Scan every line: a multi-line batch can carry the reset
-            # command mid-string (e.g. via the unsplit execute_code
-            # path), where a whole-string startswith would miss it and
-            # leave the registry dead until some later first-line match.
-            for line in cmd.split("\n"):
-                line_lower = line.strip().lower()
-                if any(line_lower.startswith(rc) for rc in _MODEL_RESET_COMMANDS):
-                    _re_register_callback(itasca_module, position)
-                    break
             return result
 
         itasca_module.command = _wrapped_command
