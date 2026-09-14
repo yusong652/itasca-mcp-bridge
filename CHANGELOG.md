@@ -6,6 +6,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-09-14
+
+### Fixed
+- The bridge no longer picks the Qt timer pump in a product console build,
+  where it silently never runs a single task. The console executables
+  (`pfc3d9_console.exe` and friends) construct a plain `QCoreApplication`
+  for Qt's non-GUI infrastructure and never call `exec()`, so the old test
+  — `QCoreApplication.instance() is not None` — passed there: `start()`
+  reported `Mode: Qt timer`, attached a `QTimer` to an event loop that does
+  not exist, and returned. The HTTP server stayed reachable while nothing
+  drained the task queue, so every request hung until it timed out and the
+  MCP side reported `bridge_unavailable` — a failure that looks like a dead
+  bridge rather than a wrong pump. Confirmed on PFC3D 9.7 console:
+  `isinstance(app, QGuiApplication)` is False and
+  `QThread.currentThread().loopLevel()` is 0.
+
+  The Qt pump now requires positive evidence of an event loop: either the
+  host application is a GUI one, or a loop is already spinning on this
+  thread. `mode="auto"` therefore falls back to the blocking poll pump in a
+  console, and `mode="gui"` fails fast with an explanation instead of
+  printing a banner for a pump that will never tick.
+
+  The application class is read from the C++ metaobject chain, not from the
+  Python type. PySide2 will not downcast an application object it did not
+  create: on PFC 7.0 GUI, `type(app)` and `isinstance(app, QGuiApplication)`
+  both report a plain `QCoreApplication` -- byte for byte what PFC 9.7
+  *console* reports -- while the process really is a GUI running an event
+  loop. PySide6 does downcast, so the Python type describes the binding's
+  capabilities rather than the host, and cannot gate this. `metaObject()`
+  asks the C++ object what it is and is unaffected; the whole superclass
+  chain is walked, because the products subclass their application twice
+  (`itasca3d::ItascaApplication` -> `itasca3d::Application` ->
+  `QApplication` on PFC 7.0).
+
+  `QThread.loopLevel()` is consulted as a second, independent witness, and
+  the blocking pump is chosen only when both say there is no event loop.
+  The two misreadings are not equally bad: the Qt pump without a loop
+  leaves requests to time out, while the blocking pump inside a GUI seizes
+  the main thread and freezes the product window with no way back except
+  killing it. Neither witness is sufficient alone -- `loopLevel()` is 0 in a
+  GUI whenever `start()` runs before `exec()` begins.
+
+  Detection still imports nothing beyond `QtCore`. Reaching for a second Qt
+  module (`QtGui`, for an isinstance check) is a step that can fail on its
+  own, and a failure inside detection is indistinguishable from "no Qt at
+  all" -- the reading that freezes the GUI.
+
+  Verified end to end on PFC 6.0 GUI and 7.0 GUI (PySide2, no downcast),
+  9.7 GUI (PySide6, downcast) and 9.7 console (no event loop).
+
+### Added
+- The README documents the headless workflow this fix makes possible: a
+  console build runs the data file passed as its first argument, so an
+  agent can start the engine and the bridge itself, with no GUI and nobody
+  at the keyboard.
+- `scratch/probe_pump_mode.py` reports which pump `start()` would pick on a
+  host, without starting anything: the Qt binding, the application's Python
+  type and C++ metaobject chain, the thread's loop level, and each witness
+  separately, distinguishing "the answer is no" from "this Qt binding has
+  no such method". The safe way to check a product version that has not
+  been verified yet, since a wrong reading in a GUI costs a frozen window.
+
 ## [0.5.3] - 2026-09-11
 
 ### Changed

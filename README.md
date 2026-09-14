@@ -90,6 +90,24 @@ import itasca_mcp_bridge
 itasca_mcp_bridge.start()
 ```
 
+### Headless, agent-launched
+
+A console build runs the data file passed as its first argument, so an
+agent can bring the stack up itself — no GUI, nobody at the keyboard:
+
+```text
+model new
+python import itasca_mcp_bridge
+python itasca_mcp_bridge.start()
+```
+
+```console
+$ pfc3d9_console.exe start_bridge.dat
+```
+
+The prompt does not come back — with no Qt event loop, the bridge polls on
+the main thread and the model is driven through the MCP client from there.
+
 The bridge is stdlib-only (`http.server` + Server-Sent Events), so there is
 no third-party dependency to install or version-match — it lands cleanly in
 any ITASCA embedded Python (3.6+) with no pins.
@@ -117,8 +135,9 @@ of the release highlights you just received; call
 Code changes take effect on the next `%run`, so this is the preferred
 workflow during development.
 
-The bridge auto-detects the runtime: a Qt timer in GUI mode, a blocking
-loop in console mode.
+The bridge auto-detects the runtime: a Qt timer when the host is a GUI
+application, a blocking loop otherwise. The banner reports which pump won,
+so `Mode` is the first thing to check if a console start looks unreachable.
 
 Expected output:
 
@@ -126,16 +145,17 @@ Expected output:
 ============================================================
 Itasca MCP Bridge Server
 ============================================================
-  Version:  0.4.2
+  Version:  0.5.4
   URL:      http://localhost:9001
   Log:      /your-working-dir/.itasca-mcp-bridge/bridge.log
+  Mode:     Qt timer
 ============================================================
 ```
 
 ## Requirements
 
 - An ITASCA product with an embedded Python interpreter.
-  - Verified: PFC 6.0 / 7.0 / 9.0.
+  - Verified: PFC 6.0 / 7.0 / 9.0, GUI and console builds.
   - FLAC3D: the bridge's core SDK/command mechanisms are verified
     compatible; full end-to-end validation is in progress.
 - Python >= 3.6 (PFC 6/7 use Python 3.6; PFC 9 uses Python 3.10).

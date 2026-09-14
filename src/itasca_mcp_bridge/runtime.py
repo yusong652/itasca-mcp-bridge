@@ -35,6 +35,77 @@ def _import_qtcore(logger=None):
     return None
 
 
+_QT_GUI_APP_CLASSES = ("QGuiApplication", "QApplication")
+
+
+def _is_qt_gui_app(app):
+    # type: (...) -> bool
+    """Whether `app` is a GUI Qt application rather than a bare core one.
+
+    Why this matters: the console builds of the products
+    (`pfc3d9_console.exe` and friends) construct a plain `QCoreApplication`
+    for Qt's non-GUI infrastructure and never call `exec()`. So a non-None
+    `QCoreApplication.instance()` does not mean there is an event loop to
+    hang a QTimer on -- on PFC 9.7 console the timer attaches, never ticks
+    once, and the bridge answers HTTP while no task is ever pumped.
+
+    Why the C++ metaobject and not the Python type: PySide2 hands back the
+    host's application as a *generic* `QCoreApplication` wrapper, because it
+    will not downcast an object it did not create itself. On PFC 7.0 GUI
+    both `type(app)` and `isinstance(app, QGuiApplication)` therefore report
+    exactly what PFC 9.7 *console* reports, while the process really is a
+    GUI running an event loop. PySide6 does downcast, so the Python type
+    describes the binding's capabilities, not the host. `metaObject()` asks
+    the C++ object what it actually is and is unaffected. Measured on PFC
+    6.0 and 7.0 GUI the chain is `itasca3d::ItascaApplication` ->
+    `itasca3d::Application` -> `QApplication` -> `QGuiApplication` ->
+    `QCoreApplication` -> `QObject`: the product subclasses its application
+    twice, so the whole chain has to be walked, not just its head.
+
+    `scratch/probe_pump_mode.py` prints this for a host without starting
+    anything -- the safe way to check a product version not listed here.
+    """
+    if app is None:
+        return False
+    try:
+        meta = app.metaObject()
+    except Exception:
+        return False
+    while meta is not None:
+        try:
+            name = meta.className()
+        except Exception:
+            return False
+        if name in _QT_GUI_APP_CLASSES:
+            return True
+        try:
+            meta = meta.superClass()
+        except Exception:
+            return False
+    return False
+
+
+def _qt_event_loop_running(QtCore):
+    # type: (...) -> bool
+    """Whether a Qt event loop is currently spinning on this thread.
+
+    Second, independent witness to the same question, on purpose: the two
+    misreadings are not equally bad. Running the Qt pump without an event
+    loop leaves tasks unpumped until requests time out; running the blocking
+    pump inside a GUI seizes the main thread and freezes the product window,
+    with no way back except killing it. So the blocking pump is chosen only
+    when *both* witnesses say there is no event loop.
+
+    Not sufficient on its own: this is 0 in a GUI process whenever `start()`
+    runs before `exec()` begins (a bridge started from a launch script), and
+    a 0 read there would be the freezing kind of mistake.
+    """
+    try:
+        return QtCore.QThread.currentThread().loopLevel() > 0
+    except Exception:
+        return False
+
+
 def _start_qt_pump(main_executor, interval_ms, max_tasks_per_tick, logger):
     # type: (...) -> bool
     """Try to attach task processing to Qt event loop. Returns True on success."""
@@ -45,7 +116,10 @@ def _start_qt_pump(main_executor, interval_ms, max_tasks_per_tick, logger):
         return False
 
     app = QtCore.QCoreApplication.instance()
-    if app is None:
+    if not (_is_qt_gui_app(app) or _qt_event_loop_running(QtCore)):
+        logger.info(
+            "No Qt GUI application and no running event loop; Qt timer pump unavailable"
+        )
         return False
 
     # Stop previous timer if start() is called multiple times.
@@ -249,7 +323,11 @@ def start(
         itasca_server.set_runtime_mode("gui")
     elif mode == "gui":
         # Raise before the banner: a failed start should not print one.
-        raise RuntimeError("Qt is not available; cannot start in gui mode")
+        raise RuntimeError(
+            "No Qt GUI event loop on this process; cannot start in gui mode. "
+            "Console builds of the product have no event loop to pump tasks "
+            "from -- start with mode=\"console\" (or \"auto\") there."
+        )
     elif use_blocking:
         itasca_server.set_runtime_mode("console")
 

@@ -87,6 +87,15 @@ ANNOUNCEMENTS = {
         "Callbacks are now repaired before every engine command instead of by "
         "matching command text. Verified on PFC 6, 7 and 9.",
     ),
+    "0.5.4": (
+        "Console builds (pfc3d9_console.exe and friends) now get the blocking "
+        "task pump they need: the bridge was reporting 'Mode: Qt timer' there "
+        "and attaching a timer to an event loop that does not exist, so no "
+        "task ever ran and every tool call timed out as bridge_unavailable.",
+        "Detection now reads the host's C++ application class, which PySide2 "
+        "hides behind a generic wrapper. Verified on PFC 6.0/7.0 GUI (PySide2) "
+        "and 9.7 GUI + console (PySide6).",
+    ),
 }
 
 

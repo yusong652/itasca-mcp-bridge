@@ -81,6 +81,24 @@ import itasca_mcp_bridge
 itasca_mcp_bridge.start()
 ```
 
+### 无头启动（由 agent 拉起）
+
+控制台构建会执行作为第一个参数传入的数据文件，因此 agent 可以自己把整套
+环境拉起来——不需要 GUI，也不需要人在键盘前：
+
+```text
+model new
+python import itasca_mcp_bridge
+python itasca_mcp_bridge.start()
+```
+
+```console
+$ pfc3d9_console.exe start_bridge.dat
+```
+
+提示符不会返回——没有 Qt 事件循环，bridge 在主线程上轮询，此后模型通过
+MCP 客户端驱动。
+
 bridge 仅依赖标准库（`http.server` + Server-Sent Events），因此没有第三方
 依赖需要安装或匹配版本——它可干净地装入任意 ITASCA 内嵌 Python（3.6+），
 无需任何版本钉死。
@@ -105,7 +123,8 @@ bridge 仅依赖标准库（`http.server` + Server-Sent Events），因此没有
 
 修改代码后重新 `%run` 即可生效，开发时推荐这种方式。
 
-Bridge 会自动检测运行环境：GUI 使用 Qt 定时器，控制台使用阻塞循环。
+Bridge 会自动检测运行环境：宿主是 GUI 应用时用 Qt 定时器，否则用阻塞循环。
+横幅会报告选中了哪一种，所以控制台启动后若发现连不上，先看 `Mode` 那一行。
 
 预期输出：
 
@@ -113,16 +132,17 @@ Bridge 会自动检测运行环境：GUI 使用 Qt 定时器，控制台使用�
 ============================================================
 Itasca MCP Bridge Server
 ============================================================
-  Version:  0.4.2
+  Version:  0.5.4
   URL:      http://localhost:9001
   Log:      /your-working-dir/.itasca-mcp-bridge/bridge.log
+  Mode:     Qt timer
 ============================================================
 ```
 
 ## 运行要求
 
 - 带内嵌 Python 解释器的 ITASCA 产品。
-  - 已验证：PFC 6.0 / 7.0 / 9.0。
+  - 已验证：PFC 6.0 / 7.0 / 9.0，GUI 与控制台构建均可。
   - FLAC3D：bridge 的核心 SDK / 命令机制已验证兼容，端到端完整验证进行中。
 - Python >= 3.6（PFC 6/7 用 Python 3.6，PFC 9 用 Python 3.10）。
 - 无第三方运行时依赖：传输层仅用标准库（`http.server` + Server-Sent Events）。
