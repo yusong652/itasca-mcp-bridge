@@ -98,15 +98,12 @@ agent can bring the stack up itself — no GUI, nobody at the keyboard:
 ```text
 model new
 python import itasca_mcp_bridge
-python itasca_mcp_bridge.start()
+python itasca_mcp_bridge.start(mode="console")
 ```
 
 ```console
 $ pfc3d9_console.exe start_bridge.dat
 ```
-
-The prompt does not come back — with no Qt event loop, the bridge polls on
-the main thread and the model is driven through the MCP client from there.
 
 The bridge is stdlib-only (`http.server` + Server-Sent Events), so there is
 no third-party dependency to install or version-match — it lands cleanly in

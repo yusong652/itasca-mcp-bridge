@@ -89,15 +89,12 @@ itasca_mcp_bridge.start()
 ```text
 model new
 python import itasca_mcp_bridge
-python itasca_mcp_bridge.start()
+python itasca_mcp_bridge.start(mode="console")
 ```
 
 ```console
 $ pfc3d9_console.exe start_bridge.dat
 ```
-
-提示符不会返回——没有 Qt 事件循环，bridge 在主线程上轮询，此后模型通过
-MCP 客户端驱动。
 
 bridge 仅依赖标准库（`http.server` + Server-Sent Events），因此没有第三方
 依赖需要安装或匹配版本——它可干净地装入任意 ITASCA 内嵌 Python（3.6+），
