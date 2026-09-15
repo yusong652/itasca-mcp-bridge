@@ -6,6 +6,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.5] - 2026-09-15
+
+### Fixed
+- The bridge no longer disappears from its client when an engine command
+  fails while the product is set to raise a dialog on errors. Itasca
+  products can show a modal `QMessageBox` on every engine error -- "Raise
+  Dialog on Error", under Tools > Options > Console, stored per user in
+  `HKCU\Software\Itasca\<product>\Terminal\ErrorDialog`. It is on by
+  default in the 6.0 generation of the products and off from 7.0 on, which
+  is why the same bridge build wedged on one person's machine and not the
+  next one's, with nothing in the bridge to explain the difference.
+
+  The box is shown with `exec()`, so the C-level `itasca.command` does not
+  return until someone clicks OK. The engine holds the GIL for that whole
+  call, so every bridge thread freezes with it -- the HTTP server included,
+  which is why requests did not even arrive and every tool reported
+  `bridge_unavailable`. Measured on PFC3D 6.00.030: one mistyped command
+  held the bridge for 48s, until a human clicked.
+
+  A separate `QTimer` does keep ticking inside the box's nested event loop.
+  Qt refuses only to redeliver a timer whose own handler is already on the
+  stack, and that is exactly the bridge's task pump (`_process_tick` ->
+  `process_tasks` -> the snippet -> `itasca.command` -> the box). Measured
+  during a 2.1s box: 67 ticks of a 25ms timer against 0 of the pump. The
+  new `utils.modal_guard` uses that window to press OK.
+
+  Its scope is deliberately narrow, because it runs inside someone's GUI:
+  only while the bridge itself is inside an engine command, and only for a
+  `QMessageBox` carrying exactly one button, which offers no choice to
+  make. Anything else is left alone and reported once to `bridge.log` with
+  its class, title and button labels.
+
+  The error is otherwise untouched: still printed to the console, still in
+  the task log, still raised out of `itasca.command`, and PFC 6's cycling
+  resume still takes over when it happened in a cycle callback. Only the
+  error box blocks -- the "List of Warnings" dialog is non-modal by design,
+  and so is the cycling dialog.
+
+  Verified live on PFC3D 6.00.030 (Python 3.6.1, PySide2): dismissed in
+  0.111s with the `RuntimeError` still raised; a single-button box left
+  alone while the bridge was idle; a two-button box left alone while it was
+  busy.
+
 ## [0.5.4] - 2026-09-14
 
 ### Fixed

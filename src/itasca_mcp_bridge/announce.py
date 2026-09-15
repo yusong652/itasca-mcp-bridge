@@ -93,6 +93,12 @@ ANNOUNCEMENTS = {
         "out.",
         "You no longer need the GUI open to use the bridge.",
     ),
+    "0.5.5": (
+        "PFC 6: a mistyped command no longer freezes the bridge. The engine's "
+        "error dialog held every request until someone clicked OK; the bridge "
+        "now closes it, and the error comes back the way it always did.",
+        "Dialogs that ask you to decide something are still left for you.",
+    ),
 }
 
 
