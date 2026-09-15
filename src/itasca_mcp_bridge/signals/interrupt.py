@@ -26,6 +26,7 @@ from typing import Any, Optional
 from .positions import INTERRUPT_CALLBACK_POSITION, EXECUTOR_CALLBACK_POSITION, register_cycle_callback
 from ..utils.command_log import live_capture_paused
 from ..utils.program_call import expand_program_call
+from ..utils import modal_guard
 
 # Module logger
 logger = logging.getLogger("itasca-mcp-bridge")
@@ -640,6 +641,11 @@ def register_interrupt_callback(itasca_module, position=INTERRUPT_CALLBACK_POSIT
                     _re_register_callback(itasca_module, position)
             seq_before = _callback_failure_seq
             start_cycle = _engine_cycle(itasca_module) if checked else None
+            # The engine can raise a modal error box from inside this call
+            # and hold it -- and every bridge thread with it -- until a
+            # person clicks OK. Mark the window so the guard's timer may
+            # dismiss it; outside it, dialogs belong to whoever raised them.
+            modal_guard.entered()
             try:
                 result = _original_command(cmd)
             except Exception as e:
@@ -649,6 +655,8 @@ def register_interrupt_callback(itasca_module, position=INTERRUPT_CALLBACK_POSIT
                 if _in_cycle_callback() and not isinstance(e, InterruptedError):
                     _note_callback_command_failure(itasca_module, cmd, e)
                 raise
+            finally:
+                modal_guard.left()
             if checked:
                 _pfc_interrupt_check()
                 _resume_if_aborted(itasca_module, _original_command, cmd, start_cycle, seq_before)

@@ -321,6 +321,11 @@ def start(
     )
     if qt_running:
         itasca_server.set_runtime_mode("gui")
+        # Only a GUI can raise the engine's modal error box, and only a
+        # running event loop can deliver the guard's timer. See
+        # utils.modal_guard.
+        from .utils.modal_guard import install as install_modal_guard
+        install_modal_guard()
     elif mode == "gui":
         # Raise before the banner: a failed start should not print one.
         raise RuntimeError(
