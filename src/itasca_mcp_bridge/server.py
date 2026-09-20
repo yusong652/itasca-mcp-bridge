@@ -33,6 +33,9 @@ from .handlers import (
     handle_list_tasks,
     handle_execute_code,
     handle_interrupt_task,
+    dialogs_payload,
+    handle_list_dialogs,
+    handle_answer_dialog,
 )
 
 # Module logger
@@ -187,6 +190,8 @@ class _BridgeRequestHandler(http.server.BaseHTTPRequestHandler):
             self._serve_sse()
         elif path == "/health":
             self._serve_health()
+        elif path == "/dialogs":
+            self._serve_dialogs()
         else:
             self._write_json(
                 404,
@@ -202,6 +207,16 @@ class _BridgeRequestHandler(http.server.BaseHTTPRequestHandler):
             "version": __version__,
             "runtime_mode": self._bridge.context.runtime_mode,
         }
+        self._write_json(200, _json_bytes(payload))
+
+    def _serve_dialogs(self):
+        """What the product is asking, for a client that only speaks curl.
+
+        Served off the request handler rather than the command table because
+        a client that wants to *read* this should not have to POST anything,
+        and because the payload needs no :class:`ServerContext`.
+        """
+        payload = dict(dialogs_payload(), type="list_dialogs_result", request_id="http")
         self._write_json(200, _json_bytes(payload))
 
     def _serve_sse(self):
@@ -276,6 +291,8 @@ class ItascaHttpServer:
             "list_tasks": handle_list_tasks,
             "interrupt_task": handle_interrupt_task,
             "execute_code": handle_execute_code,
+            "list_dialogs": handle_list_dialogs,
+            "answer_dialog": handle_answer_dialog,
         }
         # Canonical command names advertised to callers (unknown_command errors).
         self.public_commands = sorted(self.handlers)

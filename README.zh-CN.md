@@ -64,6 +64,11 @@ JSON 响应回显同一个 `request_id`。服务端→客户端门铃通过一�
 | `list_tasks` | 列出已知任务 | `offset`、`limit` |
 | `interrupt_task` | 请求优雅中断运行中的任务 | `task_id` |
 | `execute_code` | 在运行中任务的 `__main__` 里执行片段（同步 REPL） | `code`、`timeout_ms` |
+| `list_dialogs` | 产品正在问什么，以及它拿什么按钮在问 | — |
+| `answer_dialog` | 点其中某一个按钮 | `id`、`button` |
+
+`GET /dialogs` 与 `list_dialogs` 是同一份负载，给只会用 curl 的客户端。
+用途见[随产品一起启动](#随产品一起启动)。
 
 ## 快速开始
 
@@ -80,6 +85,106 @@ pip_main(["install", "--user", "itasca-mcp-bridge"])
 import itasca_mcp_bridge
 itasca_mcp_bridge.start()
 ```
+
+### 随产品一起启动
+
+手敲那两行，敲一次没问题。问题在于这也意味着：只有有人记得启动时 bridge 才在跑，
+而这是一个"客户端本来就该连得上"的服务端，这个默认值是错的。`autostart` 会往
+产品的内嵌 Python 里写一个 `sitecustomize.py`，而 CPython 在每次解释器启动时
+都会自动导入这个名字：
+
+```console
+$ python -m itasca_mcp_bridge autostart install
+$ python -m itasca_mcp_bridge autostart status
+$ python -m itasca_mcp_bridge autostart remove
+```
+
+`install` 会搜索常见的 ITASCA 安装根目录（`--root` 可指定别处，可重复）。
+启动产品，几秒后 `http://localhost:9001/health` 就会以
+`"runtime_mode": "gui"` 应答。钩子把做过的事记到
+`%TEMP%\itasca_mcp_bridge_autostart.log`；如果机器上已经有 bridge 在监听，
+它什么都不做。
+
+它是按"跑在别人的 GUI 里"来写的。只有 ITASCA 产品自己的可执行文件才会激活它
+（`pfc2d700_gui.exe` 会，自升级用来跑 pip 的 `exe64/python36/python.exe` 不会）。
+就绪状态由一个守护线程轮询，`start()` 被**排队到 GUI 线程**上执行——从别的
+线程装上去的 Qt 定时器永远不会 tick，那种情况下 `/health` 回 200，而每一个
+提交的任务都吊死。控制台构建不碰。不是我们写的 `sitecustomize.py` 会被备份
+而不是直接覆盖。
+
+产品每个版本会弹一次"本版改动"的通知窗口。默认**不动它**：一个去关自己没造成的
+窗口的 bridge，是在替键盘前的人做决定。
+
+钩子会做的是**看着**这些窗口，看一整个进程生命周期，每冒出一个新弹窗就记一次
+——不管有没有被允许去关。第一条引擎命令之前冒出来的弹窗在 `utils/modal_guard`
+的视野之外（那个只在 bridge 正处在一条引擎命令里的时候才轮询，而这里什么都还没有）。
+它**不会**吊死 bridge：Qt 模态弹窗跑的是嵌套事件循环，任务泵在里面照常 tick
+（实测——弹窗挂着时任务仍然往返成功）。它也**不会**弄坏返回的东西：把一个两按钮的
+`QMessageBox` 全程架在一次 `plot export bitmap` 上，导出的文件和"屏幕上根本没有弹窗"
+时导出的那份**逐字节相同**（43359 字节，sha256 一致，plot 里有 197 个球）。
+剩下的就是**沉默**——什么都不报错，所以除了这一行日志没有任何东西会告诉你它在那儿，
+而没人回答的弹窗会一直往屏幕最前面翻。日志里那一行是唯一的症状：
+
+```text
+a dialog is waiting for a human, leaving it alone: Recover Project File  (nothing else reports it; GET /dialogs lists its buttons)
+```
+
+设 `ITASCA_MCP_BRIDGE_AUTOSTART_DISMISS_WINDOWS=1` 会把同一趟巡查变成一只手：
+关掉版本通知，并且**回答**那些可见按钮全是确认类的弹窗——`Ok`、`Close`、
+`Continue`、`Dismiss`。点这种按钮不算做决定：整个弹窗只有一种可能的结果，
+替它点完，键盘前的人并没有损失任何他本可能想要的东西。其余的一律原样留着、
+照样上报——带 `Open`/`Discard` 的恢复提示、`OK`/`Cancel` 的保存确认、任何
+`Yes` 旁边有 `No` 的东西。这类盒子 `close()` 是关不掉的，这不是风格问题：
+Qt 会拒绝关闭一个正处在模态 `exec_()` 里的 widget，不抛异常直接返回，盒子还在
+——所以通知是**关**的，没得选的弹窗是**答**的。在 PFC2D 7.00.161 上，答完第一个
+又冒出两个，所以这里是扫而不是点一下；三个里的最后一个是只带 `Ok` 的"模型状态
+当前标记为不可重复"，它会挡住产品，而且不给你任何绕过去的路。
+
+这个开关是钩子**自己的**策略，而事先写下的策略覆盖不了还没人见过的弹窗——
+谁的机器上只有手上这一个版本的软件，谁就正好处在这个位置上。所以同一趟巡查
+还会把它看到的东西发布出去，让客户端自己来答：
+
+```console
+$ curl -s localhost:9001/dialogs
+{"status": "success", "data": {"dialogs": [
+  {"id": 1, "title": "Recover Project File",
+   "text": "The project file was not saved...",
+   "buttons": ["Open", "Discard"], "asks_nothing": false}]}}
+
+$ curl -s -X POST localhost:9001/answer_dialog \
+    -d '{"request_id":"1","id":1,"button":"Open"}'
+```
+
+快照由 GUI 线程从 widget 上读下来，到手就已经是字符串：标题、正文、以及按钮上的
+文字。客户端读它、判断、然后拿里面的 id 和标签回帖。id 按标题发一次就不再变，
+标签则要跟弹窗上真实存在的按钮对上——这样一条已经被回收再用的 id 不可能点到
+它底下换进来的别的东西。
+
+这一切都不是自动的。点击发生在 GUI 线程、在下一趟巡查里——和 `start()` 需要的是
+同一个跳转，只是不用再排一个 QObject，因为巡查本来就已经在那儿、本来就在对的线程上。
+请求会等那一趟回来报告结果，等不到就**自己撤回**，而不是对着空房间回 success：
+排进队列却没人接，正是这个模块存在的全部理由。如果产品是控制台构建，或者 bridge
+是手工从控制台起的，那就没有巡查，回答会直说这一点。正文既读 `QMessageBox.text()`
+也读子 label，因为 ITASCA 自己的弹窗是普通 `QWidget`，正文放在 label 里。
+
+它能碰到的是产品**闲着等**的弹窗——Qt 的嵌套事件循环在跑、Python 还在动，
+启动时问一句的就是这种。它碰不到从**引擎命令内部**弹出来的那种："Raise Dialog
+on Error" 会在整个 `exec()` 期间握着 GIL，任何线程都跑不了 Python，请求根本到不了。
+那种弹窗归 `utils/modal_guard`，也只有它能碰到——它自己写明了只在 bridge 正处在
+一条引擎命令里的时候轮询，而这里什么都还没有。两者不重叠。
+
+| 环境变量 | 默认 | |
+| :--- | :--- | :--- |
+| `ITASCA_MCP_BRIDGE_AUTOSTART_PORT` | `9001` | 服务端口 |
+| `ITASCA_MCP_BRIDGE_AUTOSTART_HOST` | `localhost` | 绑定地址 |
+| `ITASCA_MCP_BRIDGE_AUTOSTART_TIMEOUT` | `120` | 等待引擎和 Qt 的秒数 |
+| `ITASCA_MCP_BRIDGE_AUTOSTART_DISMISS_WINDOWS` | 关 | 设为 `1` 则关闭版本通知，并回答没得选的弹窗（无人值守启动） |
+| `ITASCA_MCP_BRIDGE_AUTOSTART_LOG` | `%TEMP%\...` | 日志路径；空字符串则不记 |
+| `ITASCA_MCP_BRIDGE_ROOTS` | — | 供 `install` 搜索的根目录，`;` 分隔 |
+
+> `exe64/addon.py` 看起来像扩展点，其实不是：**没有任何东西读它**。用标记文件
+> 探针实测过——GUI 完全初始化之后标记依然不出现，而且 `addon.py` 在产品可执行
+> 文件里出现 **0 次**。真正会被导入的是 `sitecustomize.py`。
 
 ### 无头启动（由 agent 拉起）
 

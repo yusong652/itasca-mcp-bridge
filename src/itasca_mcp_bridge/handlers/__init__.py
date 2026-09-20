@@ -15,6 +15,11 @@ from .tasks import (
     handle_interrupt_task,
 )
 from .execute_code import handle_execute_code
+from .dialogs import (
+    dialogs_payload,
+    handle_list_dialogs,
+    handle_answer_dialog,
+)
 
 __all__ = [
     # Context
@@ -26,4 +31,8 @@ __all__ = [
     "handle_interrupt_task",
     # Execute code
     "handle_execute_code",
+    # Windows
+    "dialogs_payload",
+    "handle_list_dialogs",
+    "handle_answer_dialog",
 ]

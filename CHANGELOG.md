@@ -6,6 +6,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `itasca_mcp_bridge.autostart` and `python -m itasca_mcp_bridge autostart
+  install|remove|status`, which start the bridge whenever an ITASCA product
+  starts. `install` writes a `sitecustomize.py` shim into the product's
+  embedded Python; CPython imports that name at every interpreter startup,
+  so the product brings the bridge up on its own and nobody has to type
+  anything into the IPython console. It is gated on the interpreter basename
+  (the self-upgrade's `exe64/python36/python.exe` is skipped rather than
+  polling for two minutes), waits for the engine bindings and a GUI Qt
+  application on a daemon thread, and queues `start()` onto the **GUI
+  thread** -- a `QTimer` installed from any other thread never ticks, which
+  looks like success: `/health` answers 200 while every submitted task
+  hangs. Console builds are left alone, an existing `sitecustomize.py` that
+  is not ours is backed up rather than replaced, and nothing is started when
+  a bridge is already listening on the port. The hook watches the product's
+  windows for the life of the process and reports each new dialog once. A
+  modal raised before the first engine command is outside
+  `utils/modal_guard`'s reach, which only polls while the bridge is inside an
+  engine command, and by definition nothing here is yet. It does not hang the
+  bridge -- a Qt modal runs a nested event loop and the task pump keeps
+  ticking inside it, measured -- and it does not damage what comes back
+  either: a two-button QMessageBox held open across a `plot export bitmap`
+  produced a file byte-identical to the one exported with no box on screen
+  (43359 bytes, same sha256, 197 balls in the plot). What is left is silence,
+  which is exactly why reporting it matters: nothing fails, so nothing else
+  says the box is there, and an unanswered box keeps coming back to the front
+  of the screen it is on. The log line is the only symptom.
+
+  `ITASCA_MCP_BRIDGE_AUTOSTART_DISMISS_WINDOWS=1` opts into acting on that
+  watch: it closes the revision notice and answers any dialog whose visible
+  buttons are all acknowledgements (`Ok`, `Close`, `Continue`, `Dismiss`). A
+  box like that has exactly one possible outcome, so answering it is not a
+  decision -- and it is the only way past the `Ok`-only "model state is
+  currently marked as unrepeatable" box, which otherwise blocks the product
+  for good. Everything else stays standing and is still reported, including
+  `Open`/`Discard` recovery prompts and `OK`/`Cancel` confirmations.
+  `close()` is not an option for these: Qt refuses to close a widget inside a
+  modal `exec_()` and returns without raising, which is why a notice is
+  closed and a no-choice dialog is answered. On PFC2D 7.00.161 answering the
+  first box produced two more, so the pass repeats until nothing is left.
+- `list_dialogs` and `answer_dialog` commands, and a matching `GET /dialogs`
+  route, which publish what the product is asking and let a client answer it.
+  The snapshot -- title, body text and button labels -- is read off the
+  widgets by the GUI thread and arrives as strings, because a Qt widget
+  touched from a request thread is a crash with a delay on it. Bodies come
+  from `QMessageBox.text()` and from child labels: ITASCA's own boxes are
+  plain `QWidget`s and keep theirs in labels. Ids are handed out once per
+  title and the label is matched against the buttons actually present, so
+  an id that has since been reused cannot click whatever moved under it.
+
+  This exists because the `DISMISS_WINDOWS` policy above is a decision made
+  in advance, and the boxes nobody has seen yet are exactly the ones it
+  cannot cover. The click is carried out on the GUI thread by the window
+  watch -- the same hop `start()` needs, without a second queued object,
+  since the watch is already on the right thread -- and the request waits
+  for that pass and withdraws itself when nothing picks it up, rather than
+  returning success into an empty room.
+
+  (`exe64/addon.py`, which looks like the intended extension point, is not:
+  a marker-file probe never fires, GUI fully initialised, and the name occurs
+  zero times in the product executables.)
+
+### Fixed
+- `itasca_mcp_bridge/__main__.py` ended with a bare `main()` at module level
+  instead of under an `if __name__ == "__main__"` guard, so importing the
+  module started the bridge. The console script's entry point is
+  `itasca_mcp_bridge.__main__:main`, and importing a module to reach its
+  `main` runs its body: `itasca-mcp-bridge` therefore began serving during
+  the import, before the generated wrapper reached its own call — and since
+  `start()` blocks, that second call was the one that never happened.
+
 ## [0.5.5] - 2026-09-15
 
 ### Fixed
