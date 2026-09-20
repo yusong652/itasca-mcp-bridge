@@ -96,7 +96,7 @@ python itasca_mcp_bridge.start(mode="console")
 $ pfc3d9_console.exe start_bridge.dat
 ```
 
-`start()` 不会返回，这一行之后的内容不会执行。
+`start()` 不会返回，这一行之后的内容不会执行；其余操作都走 MCP 工具。
 
 bridge 仅依赖标准库（`http.server` + Server-Sent Events），因此没有第三方
 依赖需要安装或匹配版本——它可干净地装入任意 ITASCA 内嵌 Python（3.6+），

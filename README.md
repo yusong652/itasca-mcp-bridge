@@ -105,7 +105,8 @@ python itasca_mcp_bridge.start(mode="console")
 $ pfc3d9_console.exe start_bridge.dat
 ```
 
-`start()` does not return, so nothing after that line runs.
+`start()` does not return, so nothing after that line runs; everything else
+goes through the MCP tools.
 
 The bridge is stdlib-only (`http.server` + Server-Sent Events), so there is
 no third-party dependency to install or version-match — it lands cleanly in
