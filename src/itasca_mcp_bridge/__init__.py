@@ -45,7 +45,8 @@ def start(
         host: Server host address.
         port: Server port number.
         mode: Task pump mode - "auto" (try Qt, fall back to blocking),
-            "gui" (Qt only), or "console" (blocking only).
+            "gui" (Qt only), or "console" (blocking; start() does not
+            return).
         auto_upgrade: Check PyPI for a newer bridge release and install it
             before starting. Best-effort: any network or pip failure falls
             back to starting the installed version. Also disabled by the
