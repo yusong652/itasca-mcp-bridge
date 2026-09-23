@@ -322,6 +322,9 @@ class CommandLineCapture(object):
         self._widgets = qt_widgets
         self._prompt_widget = None
         self._output_widget = None
+        # The prompt label as last read while idle ("pfc3d>"). It is read
+        # again at every Return, because the label changes with the engine's
+        # state: it reads "BUSY>" while a data file or a solve is running.
         self._prompt = None  # type: str
         # Lines entered but not yet recorded, oldest first. More than one
         # only when lines are entered faster than the engine runs them.
@@ -372,7 +375,6 @@ class CommandLineCapture(object):
         output_widget = _find_widget(self._widgets, OUTPUT_WIDGET_CLASS)
         self._prompt_widget = prompt_widget
         self._output_widget = output_widget
-        self._prompt = _read_prompt_label(prompt_widget)
 
         if not self._connect(prompt_widget, PROMPT_SIGNAL, self._on_return_pressed):
             self._event_filter = _ReturnKeyFilter(self._core, self._on_return_pressed)
@@ -392,8 +394,8 @@ class CommandLineCapture(object):
         self._settle_timer = timer
 
         logger.info(
-            "Command line capture installed via %s (prompt=%r, output pane=%s)",
-            how, self._prompt, "yes" if output_widget is not None else "no",
+            "Command line capture installed via %s (output pane=%s)",
+            how, "yes" if output_widget is not None else "no",
         )
         return True
 
@@ -453,8 +455,12 @@ class CommandLineCapture(object):
             return
         if not command:
             return
+        prompt = _read_prompt_label(self._prompt_widget)
+        if prompt is not None:
+            self._prompt = prompt
         self._pending.append({
             "command": command,
+            "prompt": self._prompt,
             "offset": len(self._output_text()),
             "waited_ms": 0,
         })
@@ -486,7 +492,7 @@ class CommandLineCapture(object):
             head = self._pending[0]
             text = self._output_text()
             output, found, _ended, end = locate_command_output(
-                text, head["offset"], self._prompt, head["command"]
+                text, head["offset"], head["prompt"], head["command"]
             )
             if not found:
                 head["waited_ms"] += OUTPUT_SETTLE_MS
@@ -570,7 +576,13 @@ def _find_widget(qt_widgets, class_name):
 
 def _read_prompt_label(prompt_widget):
     # type: (object) -> str
-    """The ``pfc3d>`` label next to the prompt line, or None if not readable."""
+    """The ``pfc3d>`` label next to the prompt line, or None if not readable.
+
+    None also while the engine is busy: the label then reads ``BUSY>``,
+    which is not what the echo line will carry.
+    """
+    if prompt_widget is None:
+        return None
     try:
         parent = prompt_widget.parent()
         siblings = parent.children() if parent is not None else []
@@ -584,8 +596,11 @@ def _read_prompt_label(prompt_widget):
             text = sibling.property("text")
         except Exception:
             continue
-        if isinstance(text, str) and text.strip().endswith(">"):
-            return text.strip()
+        if not isinstance(text, str):
+            continue
+        text = text.strip()
+        if text.endswith(">") and text.upper() != "BUSY>":
+            return text
     return None
 
 

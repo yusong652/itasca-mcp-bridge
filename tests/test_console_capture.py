@@ -358,7 +358,34 @@ def test_command_capture_installs_on_the_prompt_signal(history, gui):
     assert "myReturnPressed(QString)" in gui.prompt.signals
     assert "textChanged()" in gui.output.signals
     assert gui.prompt.filters == []
-    assert hook._prompt == "pfc3d>"
+    gui.prompt.emit("myReturnPressed(QString)", "fish list")
+    assert hook._pending[0]["prompt"] == "pfc3d>"
+
+
+def test_busy_prompt_label_falls_back_to_generic_prompt_match(history, gui):
+    """While a data file runs the label reads BUSY>, but the echo still says pfc3d>."""
+    gui.label.setProperty("text", "BUSY>")
+    CommandLineCapture(history, _Core, gui.widgets).install()
+    gui.prompt.emit("myReturnPressed(QString)", "fish list")
+    _append_output(gui, "pfc3d>fish list\nlisted\n")
+    _settle_timer().fire()
+    entry = history.consume()["entries"][0]
+    assert entry["output"] == "listed"
+
+
+def test_prompt_label_is_read_at_each_return(history, gui):
+    hook = CommandLineCapture(history, _Core, gui.widgets)
+    hook.install()
+    gui.label.setProperty("text", "BUSY>")
+    gui.prompt.emit("myReturnPressed(QString)", "a")
+    assert hook._pending[0]["prompt"] is None
+    gui.label.setProperty("text", "flac3d>")
+    gui.prompt.emit("myReturnPressed(QString)", "b")
+    assert hook._pending[1]["prompt"] == "flac3d>"
+    # A busy label after a good read keeps the last good prompt.
+    gui.label.setProperty("text", "BUSY>")
+    gui.prompt.emit("myReturnPressed(QString)", "c")
+    assert hook._pending[2]["prompt"] == "flac3d>"
 
 
 def test_command_capture_records_command_with_its_output(history, gui):
@@ -494,7 +521,6 @@ def test_command_capture_retries_until_widgets_appear(history):
     retry.fire()
     assert not retry.running
     assert "myReturnPressed(QString)" in prompt.signals
-    assert hook._prompt is None  # no label to read
 
 
 def test_command_capture_gives_up_after_retries(history):
