@@ -24,6 +24,10 @@ command language / Python SDK rather than any product-specific API.
 - **Unified output capture.** Python `print` and product console output
   (`itasca.command()` tables, list dumps, summaries) are interleaved in
   execution order in the task log.
+- **User console history.** What the person types into the product GUI —
+  cells in the IPython pane and lines at the command prompt — is recorded
+  with its output and handed to the client on request (`console_history`),
+  so an agent sees what happened in the GUI between its own calls.
 
 ## Architecture
 
@@ -61,10 +65,10 @@ flowchart TD
 The bridge is the source of truth for the wire contract — MCP servers such
 as itasca-mcp are clients of it. Each request is a `POST /<command>` whose
 body is a JSON object carrying a `request_id`; the JSON response echoes the
-`request_id`. The server→client doorbell rides a single long-lived
-`GET /events` SSE stream (payload-free `task_status_changed` events that
-prompt the client to re-poll), and `GET /health` is a liveness probe. The
-commands are product-neutral:
+`request_id`. The server→client doorbells ride a single long-lived
+`GET /events` SSE stream (payload-free `task_status_changed` and
+`console_entry` events that prompt the client to re-poll), and
+`GET /health` is a liveness probe. The commands are product-neutral:
 
 | `POST /<command>` | Purpose | Key body fields |
 |---|---|---|
@@ -73,6 +77,7 @@ commands are product-neutral:
 | `list_tasks` | List known tasks | `offset`, `limit` |
 | `interrupt_task` | Request a graceful interrupt of a running task | `task_id` |
 | `execute_code` | Run a snippet in the running task's `__main__` (sync REPL) | `code`, `timeout_ms` |
+| `console_history` | Read what the person typed in the GUI since the last call | `limit` |
 
 ## Quick Start
 

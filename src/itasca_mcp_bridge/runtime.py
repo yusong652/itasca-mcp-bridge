@@ -428,6 +428,16 @@ def start(
         # utils.modal_guard.
         from .utils.modal_guard import install as install_modal_guard
         install_modal_guard()
+        # What the person types into the IPython pane and the command
+        # prompt. Only a GUI has those widgets, and the prompt hook needs
+        # the event loop for its timers. Never allowed to fail the start:
+        # the bridge without it is the bridge everyone had before.
+        from .console import install_console_capture
+        try:
+            installed = install_console_capture(itasca_server.context.console_history)
+            logger.info("Console capture: %s", installed)
+        except Exception as e:
+            logger.warning("Console capture not installed: {}".format(e))
     elif mode == "gui":
         # Raise before the banner: a failed start should not print one.
         raise RuntimeError(

@@ -15,6 +15,7 @@ from .tasks import (
     handle_interrupt_task,
 )
 from .execute_code import handle_execute_code
+from .console import handle_console_history
 
 __all__ = [
     # Context
@@ -26,4 +27,6 @@ __all__ = [
     "handle_interrupt_task",
     # Execute code
     "handle_execute_code",
+    # Console
+    "handle_console_history",
 ]

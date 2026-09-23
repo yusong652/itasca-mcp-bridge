@@ -24,6 +24,7 @@ import socketserver
 import threading
 import time
 
+from .console import ConsoleHistory
 from .execution import ScriptRunner
 from .tasks import TaskManager
 from .handlers import (
@@ -33,6 +34,7 @@ from .handlers import (
     handle_list_tasks,
     handle_execute_code,
     handle_interrupt_task,
+    handle_console_history,
 )
 
 # Module logger
@@ -261,6 +263,13 @@ class ItascaHttpServer:
         task_manager = TaskManager(on_task_terminal=self._broadcast_task_status)
         self.script_runner = ScriptRunner(main_executor, task_manager)
 
+        # What the person types into the product's consoles. The store is
+        # always there so the handler always answers; whether anything is
+        # ever appended depends on the capture hooks `start()` installs
+        # (GUI only, after the Qt pump has won).
+        console_history = ConsoleHistory()
+        console_history.on_new_entry = self._broadcast_console_entry
+
         # Single home for handler dependencies; handlers reach them via
         # ``self.context``, never as server attributes.
         self.context = ServerContext(
@@ -268,6 +277,7 @@ class ItascaHttpServer:
             script_runner=self.script_runner,
             main_executor=self.main_executor,
             runtime_mode=runtime_mode,
+            console_history=console_history,
         )
 
         self.handlers = {
@@ -276,6 +286,7 @@ class ItascaHttpServer:
             "list_tasks": handle_list_tasks,
             "interrupt_task": handle_interrupt_task,
             "execute_code": handle_execute_code,
+            "console_history": handle_console_history,
         }
         # Canonical command names advertised to callers (unknown_command errors).
         self.public_commands = sorted(self.handlers)
@@ -313,15 +324,28 @@ class ItascaHttpServer:
         on overflow the doorbell is dropped because the client always re-polls
         status.
         """
-        with self._conn_lock:
-            if not self.active_connections:
-                return
-            queues = list(self.active_connections)
-        msg = json.dumps({
+        self._broadcast({
             "type": "task_status_changed",
             "task_id": task_id,
             "status": status,
         })
+
+    def _broadcast_console_entry(self, entry):
+        # type: (dict) -> None
+        """Doorbell for a new console entry; the client re-polls ``console_history``."""
+        self._broadcast({
+            "type": "console_entry",
+            "entry_id": entry.get("id"),
+            "source": entry.get("source"),
+        })
+
+    def _broadcast(self, payload):
+        # type: (dict) -> None
+        with self._conn_lock:
+            if not self.active_connections:
+                return
+            queues = list(self.active_connections)
+        msg = json.dumps(payload)
         for q in queues:
             try:
                 q.put_nowait(msg)
@@ -382,6 +406,8 @@ class ItascaHttpServer:
             return "task_id={}".format(data.get("task_id", "?"))
         if command == "list_tasks":
             return "offset={} limit={}".format(data.get("offset", 0), data.get("limit", "all"))
+        if command == "console_history":
+            return "limit={}".format(data.get("limit", 20))
         return ""
 
     # -- Lifecycle ----------------------------------------------------------

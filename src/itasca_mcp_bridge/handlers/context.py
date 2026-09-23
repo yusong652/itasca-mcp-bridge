@@ -24,6 +24,8 @@ class ServerContext:
         script_runner: Runs ITASCA Python scripts via main thread queue
         main_executor: Queue-based main thread execution
         runtime_mode: Active bridge runtime mode ("gui" or "console")
+        console_history: What the person typed into the product's consoles
+            (``ConsoleHistory``), or None where nothing captures it
     """
 
     def __init__(
@@ -32,9 +34,11 @@ class ServerContext:
         script_runner,  # type: ScriptRunner
         main_executor,  # type: MainThreadExecutor
         runtime_mode="unknown",  # type: str
+        console_history=None,  # type: object
     ):
         # type: (...) -> None
         self.task_manager = task_manager
         self.script_runner = script_runner
         self.main_executor = main_executor
         self.runtime_mode = runtime_mode
+        self.console_history = console_history

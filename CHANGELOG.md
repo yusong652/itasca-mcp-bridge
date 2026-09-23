@@ -6,6 +6,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- The bridge now records what the person at the keyboard types into the
+  product GUI and hands it to the client through a new `console_history`
+  command. Both places one can type are covered: cells run in the IPython
+  pane (input, printed output, expression result, whether it raised) and
+  lines entered at the product's own command prompt (the line and what
+  the engine printed for it, flagged when the engine reported an error).
+  Entries carry a `source` of `python` or `command`. The bridge keeps a
+  delivery cursor, so each call returns only what the client has not seen
+  yet, and both entries and cursor persist in `.itasca-mcp-bridge/` across
+  a bridge restart. A `console_entry` doorbell is pushed over `GET /events`
+  as entries arrive.
+
+  The IPython pane is hooked through the shell's `pre_run_cell` /
+  `post_run_cell` events, in both the calling convention IPython 6.2 uses
+  (6.0/7.0 products) and the one IPython 8 uses (9.x products). The command
+  prompt is hooked through the prompt widget's own `myReturnPressed`
+  signal, with an event filter on the Return key as the fallback where the
+  Qt binding cannot connect it; the command's output is cut out of the
+  console pane between its echo line and the next. Measured on PFC3D 6.0:
+  lines entered faster than the engine runs them, repeats of the same
+  line, and engine errors are all attributed correctly. GUI only: a console
+  build has neither pane nor prompt widget, and `console_history` there
+  answers with no entries.
+
 ### Changed
 - README, package metadata, docstrings and comments now describe the
   bridge in terms of the ITASCA product it runs in rather than PFC. The
