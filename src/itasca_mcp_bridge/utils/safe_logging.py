@@ -26,7 +26,7 @@ CPython closed this in 3.11 by switching ``handle`` to ``with
 self.lock:``, which compiles to a single ``SETUP_WITH`` opcode that
 acquires the lock and registers ``__exit__`` atomically -- no exploitable
 edge between the two. We backport that form here so the bridge is safe on
-the Python versions PFC actually ships (3.6 for PFC 6/7, 3.10 for PFC 9).
+the Python versions the products actually ship (3.6 for 6.0/7.0, 3.10 for 9.x).
 
 Measured on the live PFC3D 9 / Python 3.10.5 runtime: the stdlib
 acquire/try/finally form leaked the lock in ~1/3 of injections that

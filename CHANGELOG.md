@@ -6,6 +6,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- README, package metadata, docstrings and comments now describe the
+  bridge in terms of the ITASCA product it runs in rather than PFC. The
+  Requirements section lists every product the bridge is verified on (PFC,
+  FLAC3D, 3DEC, MPoint, MassFlow; 6.0, 7.0 and 9.x generations, GUI and
+  console builds), and engine behaviours that differ by generation are
+  stated per generation ("the 6.0 engine") with the host they were
+  measured on kept as evidence.
+- The two cycle callbacks the bridge registers with the engine are now
+  named `_mcp_bridge_interrupt_check` and `_mcp_bridge_executor_callback`
+  (were `_pfc_interrupt_check` / `_pfc_executor_callback`). The names are
+  what the engine prints when a callback raises, and what the bridge
+  matches on to report a task as `interrupted`. Callbacks left under the
+  old names by a bridge that ran earlier in the same session are removed
+  at the next `start()`.
+
 ## [0.5.5] - 2026-09-15
 
 ### Fixed

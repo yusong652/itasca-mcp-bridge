@@ -23,8 +23,8 @@ from itasca_mcp_bridge.signals.interrupt import (
 
 @pytest.fixture(autouse=True)
 def _isolate_cwd(monkeypatch, tmp_path):
-    # capture_engine_console creates `.pfc-mcp/logs/` in CWD; redirect so
-    # tests don't litter the repo.
+    # The engine-console capture creates its log directory under CWD;
+    # redirect so tests don't litter the repo.
     monkeypatch.chdir(tmp_path)
 
 
@@ -111,11 +111,11 @@ class TestTerminationPaths:
         assert result["status"] == "interrupted"
         assert "user" in result["message"]
 
-    def test_pfc_callback_value_error_recovers_interrupt(self, itasca_stub):
-        # PFC wraps callback-raised exceptions in ValueError; run_snippet
+    def test_engine_callback_value_error_recovers_interrupt(self, itasca_stub):
+        # The engine wraps callback-raised exceptions in ValueError; run_snippet
         # sniffs the message and recovers the InterruptedError path so
         # the user sees the right status.
-        code = 'raise ValueError("Exception in _pfc_interrupt_check: InterruptedError: stopped")'
+        code = 'raise ValueError("Exception in _mcp_bridge_interrupt_check: InterruptedError: stopped")'
         result = run_snippet(code, StringIO())
         assert result["status"] == "interrupted"
 

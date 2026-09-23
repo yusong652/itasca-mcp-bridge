@@ -1,9 +1,10 @@
 """Tests for the cycling resume after a callback command error.
 
-PFC 6 aborts the cycling a callback interrupted when an engine command
-fails inside that callback: a mistyped execute_code command sent while a
-task cycles silently cuts the task's running `model cycle` / `model solve`
-short (verified live on 6.00.030, 2026-09-06; PFC 7 keeps cycling). The
+The 6.0 engine aborts the cycling a callback interrupted when an engine
+command fails inside that callback: a mistyped execute_code command sent
+while a task cycles silently cuts the task's running `model cycle` /
+`model solve` short (verified live on PFC3D 6.00.030, 2026-09-06; the 7.0
+engine keeps cycling). The
 wrapped itasca.command records the failure and, when the outer cycling
 command returns at that very cycle, re-issues the remainder.
 """
@@ -36,8 +37,8 @@ class _CyclingFakeItasca:
     engine command is mistyped: runs it through the wrapped
     itasca.command with the callback depth raised, and swallows the
     error the way a snippet with try/except would. `aborts=True`
-    emulates PFC 6 (the engine stops cycling at that gap);
-    `aborts=False` emulates PFC 7 (cycling carries on).
+    emulates the 6.0 engine (it stops cycling at that gap);
+    `aborts=False` emulates the 7.0 engine (cycling carries on).
     """
 
     _RUN_RE = re.compile(r"^model (cycle|solve)\b(.*)$")
@@ -101,7 +102,7 @@ def _registered(**kw) -> _CyclingFakeItasca:
 
 
 class TestResumeAfterCallbackCommandError:
-    def test_pfc6_abort_resumes_model_cycle(self, capsys):
+    def test_engine60_abort_resumes_model_cycle(self, capsys):
         fake = _registered(aborts=True, fail_at=[200])
         fake.command("model cycle 500")
         assert fake.commands == ["model cycle 500", "bad command", "model cycle 300"]
@@ -111,7 +112,7 @@ class TestResumeAfterCallbackCommandError:
         assert "resuming with `model cycle 300`" in out
         assert "`bad command`" in out
 
-    def test_pfc7_keeps_cycling_nothing_reissued(self, capsys):
+    def test_engine70_keeps_cycling_nothing_reissued(self, capsys):
         fake = _registered(aborts=False, fail_at=[200])
         fake.command("model cycle 500")
         assert fake.commands == ["model cycle 500", "bad command"]
@@ -198,7 +199,7 @@ class TestResumeAfterCallbackCommandError:
         with pytest.raises(RuntimeError) as info:
             fake.command("bad command")
         assert "failed inside the cycle callback" in str(info.value)
-        assert "PFC 6" in str(info.value)
+        assert "6.0 products" in str(info.value)
 
     def test_interrupt_inside_callback_is_not_a_failure(self, monkeypatch):
         fake = _CyclingFakeItasca()

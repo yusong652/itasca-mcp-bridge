@@ -7,7 +7,7 @@ import threading
 import pytest
 from itasca_mcp_bridge.signals import interrupt as interrupt_mod
 from itasca_mcp_bridge.signals.interrupt import (
-    _pfc_interrupt_check,
+    _mcp_bridge_interrupt_check,
     check_interrupt,
     clear_current_task,
     clear_interrupt,
@@ -57,19 +57,19 @@ class TestCurrentTask:
         assert peek_current_task() == "inner"
 
 
-class TestPfcInterruptCheck:
+class TestInterruptCheck:
     def test_no_current_task_is_noop(self):
-        _pfc_interrupt_check()  # must not raise
+        _mcp_bridge_interrupt_check()  # must not raise
 
     def test_current_task_without_flag_is_noop(self):
         set_current_task("task-1")
-        _pfc_interrupt_check()  # no flag set, must not raise
+        _mcp_bridge_interrupt_check()  # no flag set, must not raise
 
     def test_raises_when_current_task_has_flag(self):
         set_current_task("task-1")
         request_interrupt("task-1")
         with pytest.raises(InterruptedError, match="task-1"):
-            _pfc_interrupt_check()
+            _mcp_bridge_interrupt_check()
 
     def test_ignores_flag_for_unrelated_task(self):
         # Common scenario: snippet runs inside the cycle gap of a busy
@@ -78,7 +78,7 @@ class TestPfcInterruptCheck:
         # the *inner* snippet must not trip the outer task's check.
         set_current_task("outer")
         request_interrupt("inner")
-        _pfc_interrupt_check()  # outer is current, only inner is flagged
+        _mcp_bridge_interrupt_check()  # outer is current, only inner is flagged
 
 
 class TestExecThreadRegistry:
@@ -165,7 +165,7 @@ class TestPreDispatchReRegistration:
 
     @staticmethod
     def _interrupt_registrations(fake: _FakeItasca) -> int:
-        return sum(1 for name, _ in fake.set_calls if name == "_pfc_interrupt_check")
+        return sum(1 for name, _ in fake.set_calls if name == "_mcp_bridge_interrupt_check")
 
     def _registered_fake(self) -> _FakeItasca:
         from itasca_mcp_bridge.signals.interrupt import register_interrupt_callback
@@ -180,7 +180,7 @@ class TestPreDispatchReRegistration:
         fake.command("model cycle 100")
         # The protecting registration must land before the cycling command.
         assert fake.events[-1] == ("cmd", "model cycle 100")
-        assert ("set", "_pfc_interrupt_check") in fake.events[:-1]
+        assert ("set", "_mcp_bridge_interrupt_check") in fake.events[:-1]
 
     def test_ordinary_command_re_registers(self):
         fake = self._registered_fake()
@@ -229,7 +229,7 @@ class TestPreDispatchReRegistration:
 class TestCommandBoundaryInterrupt:
     """_wrapped_command honors a pending interrupt at every command
     boundary. The engine does not always propagate the cycle callback's
-    InterruptedError: PFC 6 swallows it when cycling was started from a
+    InterruptedError: the 6.0 engine swallows it when cycling was started from a
     FISH `command` block and carries on with the next command. The
     task's flag is still set, so the wrapper raises before the next
     command starts and after the current one returns."""
@@ -263,7 +263,7 @@ class TestCommandBoundaryInterrupt:
             clear_current_task()
 
     def test_interrupt_swallowed_by_engine_is_raised_after_command_returns(self):
-        # Emulate PFC 6: the flag is set (callback raised) during the
+        # Emulate the 6.0 engine: the flag is set (callback raised) during the
         # command, but the engine swallows the exception and returns.
         fake = self._registered_fake()
         real_command = fake.command  # the wrapper
@@ -355,7 +355,7 @@ class TestNoRegistryMutationInCycleCallback:
 
     @staticmethod
     def _interrupt_registrations(fake: _FakeItasca) -> int:
-        return sum(1 for name, _ in fake.set_calls if name == "_pfc_interrupt_check")
+        return sum(1 for name, _ in fake.set_calls if name == "_mcp_bridge_interrupt_check")
 
     def test_reset_inside_callback_defers_re_registration(self, monkeypatch):
         from itasca_mcp_bridge.signals import cycle_executor
@@ -434,7 +434,7 @@ class TestEnsureCycleCallbacks:
 
         fake = _RegistryFakeItasca()
         assert register_interrupt_callback(fake) is True
-        key = ("_pfc_interrupt_check", INTERRUPT_CALLBACK_POSITION)
+        key = ("_mcp_bridge_interrupt_check", INTERRUPT_CALLBACK_POSITION)
         assert key in fake.registry
 
         fake.wipe()  # GUI-console `model new`: no wrapped command, no repair
@@ -444,7 +444,7 @@ class TestEnsureCycleCallbacks:
         assert key in fake.registry
 
     def test_idempotent_on_strict_engine(self):
-        # PFC 6 raises on a duplicate set_callback; remove-first keeps
+        # The 6.0 engine raises on a duplicate set_callback; remove-first keeps
         # the unconditional re-registration safe when nothing was wiped.
         from itasca_mcp_bridge.signals.interrupt import (
             ensure_cycle_callbacks,

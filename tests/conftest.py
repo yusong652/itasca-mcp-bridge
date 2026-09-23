@@ -1,7 +1,7 @@
 """Test configuration for itasca-mcp-bridge.
 
 The bridge package isn't installed in this repo's virtualenv (it's
-deployed inside PFC GUI's embedded Python), so we put `src/` on sys.path
+deployed inside a product's embedded Python), so we put `src/` on sys.path
 to make `import itasca_mcp_bridge.*` work from these tests.
 
 Tests that exercise code paths reaching `import itasca` (run_snippet via
@@ -29,7 +29,7 @@ def itasca_stub():
     `capture_engine_console` does `import itasca` and immediately calls
     `itasca.command(...)` to set the log-file path; a MagicMock accepts
     arbitrary attribute access and calls, so the snippet path can run
-    end-to-end without a real PFC GUI behind it.
+    end-to-end without a real product GUI behind it.
     """
     stub = MagicMock(name="itasca")
     sys.modules["itasca"] = stub

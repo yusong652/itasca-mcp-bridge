@@ -1,11 +1,11 @@
 """Tests for execution.script.ScriptRunner interrupt classification.
 
 The engine wraps an InterruptedError raised inside the cycle callback
-differently per version: PFC 7 raises a ValueError whose text still
-contains "InterruptedError" and the callback name; PFC 6 raises an
-opaque RuntimeError ("Error in execution - See the Itasca Console...")
-with no trace of the original exception. Classification therefore has
-two legs: string matching for the PFC 7 shape, and the still-pending
+differently per version: the 7.0 engine raises a ValueError whose text
+still contains "InterruptedError" and the callback name; the 6.0 engine
+raises an opaque RuntimeError ("Error in execution - See the Itasca
+Console...") with no trace of the original exception. Classification
+therefore has two legs: string matching for the 7.0 shape, and the still-pending
 interrupt flag as the engine-agnostic fallback.
 """
 
@@ -34,31 +34,31 @@ def _run(script_content: str, task_id: str) -> dict:
     return runner._execute("fake_script.py", script_content, StringIO(), task_id)
 
 
-PFC6_OPAQUE_WRAP = (
+ENGINE60_OPAQUE_WRAP = (
     'raise RuntimeError("Error in execution - '
     'See the Itasca Console for further details.")'
 )
 
 
 def test_opaque_wrap_with_pending_interrupt_is_interrupted(itasca_stub):
-    # PFC 6 shape: the interrupt flag (still set when classification
+    # 6.0-engine shape: the interrupt flag (still set when classification
     # runs; cleared in the finally) identifies the interruption.
     request_interrupt("task-6")
-    result = _run(PFC6_OPAQUE_WRAP, "task-6")
+    result = _run(ENGINE60_OPAQUE_WRAP, "task-6")
     assert result["status"] == "interrupted"
 
 
 def test_opaque_wrap_without_interrupt_is_error(itasca_stub):
     # Same engine error with no pending interrupt request must remain a
     # genuine failure.
-    result = _run(PFC6_OPAQUE_WRAP, "task-noflag")
+    result = _run(ENGINE60_OPAQUE_WRAP, "task-noflag")
     assert result["status"] == "error"
 
 
-def test_pfc7_valueerror_wrap_is_interrupted(itasca_stub):
+def test_engine70_valueerror_wrap_is_interrupted(itasca_stub):
     code = (
         'raise ValueError("InterruptedError: interrupted '
-        'while processing _pfc_interrupt_check")'
+        'while processing _mcp_bridge_interrupt_check")'
     )
     result = _run(code, "task-7")
     assert result["status"] == "interrupted"

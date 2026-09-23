@@ -61,7 +61,7 @@ class TestIsSafeToAsyncRaise:
     def test_dummy_thread_rejected(self):
         # The Dummy-N prefix is how CPython names threads it didn't
         # create itself (boost::python callbacks land here). Injecting
-        # into one would propagate back into PFC's C++ FATAL handler.
+        # into one would propagate back into the engine's C++ FATAL handler.
         fake = threading.Thread(name="Dummy-99")
         fake.start()
         fake.join()
@@ -89,7 +89,7 @@ class TestIsSafeToAsyncRaise:
 class TestFireAsyncException:
     def test_terminates_pure_python_loop(self):
         """The whole point of L2: a `while not stop` loop that never
-        yields to the PFC callback still unwinds when we async-raise."""
+        yields to the engine callback still unwinds when we async-raise."""
         captured: dict[str, BaseException | None] = {"exc": None}
         running = threading.Event()
 

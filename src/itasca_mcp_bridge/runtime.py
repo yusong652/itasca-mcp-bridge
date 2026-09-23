@@ -3,7 +3,7 @@
 
 Holds the implementation behind `itasca_mcp_bridge.start()` so the package
 `__init__` stays a thin entry point. Must stay compatible with Python 3.6
-(PFC 6/7 embedded interpreter).
+(the 6.0/7.0 products' embedded interpreter).
 """
 
 # Keep global references to avoid Qt timer/callback garbage collection.
@@ -15,8 +15,8 @@ VALID_RUNTIME_MODES = ("auto", "gui", "console")
 
 
 # Qt binding shipped with the host product varies by version:
-#   PFC 6/7 and early PFC 9 -> PySide2 (Qt5)
-#   PFC 9.7+                 -> PySide6 (Qt6)
+#   6.0/7.0 and early 9.x products -> PySide2 (Qt5)
+#   9.7+ products                  -> PySide6 (Qt6)
 # Probe newest first so the same bridge build works across all of them.
 _QT_BINDINGS = ("PySide6", "PySide2")
 
@@ -42,18 +42,18 @@ def _is_qt_gui_app(app):
     # type: (...) -> bool
     """Whether `app` is a GUI Qt application rather than a bare core one.
 
-    Why this matters: the console builds of the products
-    (`pfc3d9_console.exe` and friends) construct a plain `QCoreApplication`
-    for Qt's non-GUI infrastructure and never call `exec()`. So a non-None
+    Why this matters: the console builds of the products (the
+    `*_console.exe` binaries) construct a plain `QCoreApplication` for Qt's
+    non-GUI infrastructure and never call `exec()`. So a non-None
     `QCoreApplication.instance()` does not mean there is an event loop to
-    hang a QTimer on -- on PFC 9.7 console the timer attaches, never ticks
-    once, and the bridge answers HTTP while no task is ever pumped.
+    hang a QTimer on -- on a 9.7 console build the timer attaches, never
+    ticks once, and the bridge answers HTTP while no task is ever pumped.
 
     Why the C++ metaobject and not the Python type: PySide2 hands back the
     host's application as a *generic* `QCoreApplication` wrapper, because it
-    will not downcast an object it did not create itself. On PFC 7.0 GUI
+    will not downcast an object it did not create itself. On a 7.0 GUI
     both `type(app)` and `isinstance(app, QGuiApplication)` therefore report
-    exactly what PFC 9.7 *console* reports, while the process really is a
+    exactly what a 9.7 *console* reports, while the process really is a
     GUI running an event loop. PySide6 does downcast, so the Python type
     describes the binding's capabilities, not the host. `metaObject()` asks
     the C++ object what it actually is and is unaffected. Measured on PFC
@@ -351,8 +351,8 @@ def start(
         import itasca as it  # type: ignore
     except ImportError as e:
         raise RuntimeError(
-            "itasca module not available; run bridge inside an ITASCA product "
-            "GUI (PFC, FLAC3D, ...)"
+            "itasca module not available; run the bridge inside an ITASCA "
+            "product's embedded Python"
         ) from e
 
     it.command("python-reset-state false")

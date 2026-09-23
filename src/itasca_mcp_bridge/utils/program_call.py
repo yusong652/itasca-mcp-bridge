@@ -293,7 +293,7 @@ def _echo(line):
     # type: (str) -> None
     """Print a bridge/comment line while the capture session is paused.
 
-    The expander runs beneath one live log session; PFC 6 would log the
+    The expander runs beneath one live log session; the 6.0 engine would log the
     console copy of this print and the capture would deliver it a second
     time (see ``live_capture_paused``).
     """

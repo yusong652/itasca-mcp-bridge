@@ -5,11 +5,11 @@ build-backend = "hatchling.build"
 [project]
 name = "itasca-mcp-bridge"
 dynamic = ["version"]
-description = "HTTP bridge for ITASCA codes (PFC, FLAC3D, ...) - runs inside the product GUI to enable remote simulation control"
+description = "HTTP bridge for ITASCA products (PFC, FLAC3D, 3DEC, MPoint, MassFlow) - runs inside the product process to enable remote simulation control"
 requires-python = ">=3.6"
 license = { text = "MIT" }
 authors = [{ name= "Yusong Han", email = "yusong.han.652@gmail.com" }, { name = "Nagisa Toyoura", email = "nagisa.toyoura@gmail.com" }]
-keywords = ["itasca", "itasca-software", "pfc", "flac", "flac3d", "3dec", "mcp", "simulation", "http", "bridge"]
+keywords = ["itasca", "itasca-software", "pfc", "flac", "flac3d", "3dec", "mpoint", "massflow", "mcp", "simulation", "http", "bridge"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Topic :: Scientific/Engineering",

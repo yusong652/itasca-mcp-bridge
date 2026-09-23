@@ -14,7 +14,7 @@ Maintaining `ANNOUNCEMENTS`:
 - Entries for old versions may be pruned; they only ever display for
   users jumping from a version older than them.
 
-Must stay compatible with Python 3.6 (PFC 6/7 embedded interpreter).
+Must stay compatible with Python 3.6 (the 6.0/7.0 products' embedded interpreter).
 """
 
 from .upgrade import _parse_version
@@ -40,7 +40,7 @@ ANNOUNCEMENTS = {
     "0.4.3": (
         "Self-upgrade fixed for consoles whose stdout lacks isatty: pip's "
         "progress bar crashed the download, so upgrades silently never landed "
-        "(stock PFC 6/7 pip was affected).",
+        "(the stock pip of the 6.0/7.0 products was affected).",
         "The upgrade-failed hint now prints the product Python's full path -- "
         "a plain 'python' would install into the system interpreter instead.",
     ),
@@ -48,7 +48,7 @@ ANNOUNCEMENTS = {
         "Multi-line itasca.command() batches are now safe end-to-end: FISH "
         "define blocks survive splitting, and a mid-batch 'model new' no "
         "longer leaves the bridge unreachable or tasks uninterruptible.",
-        "PFC 6: interrupting a task now reports 'interrupted' (was 'failed'), "
+        "6.0 products: interrupting a task now reports 'interrupted' (was 'failed'), "
         "and a live execute_code during cycling no longer silently stops the run.",
     ),
     "0.4.5": (
@@ -65,16 +65,16 @@ ANNOUNCEMENTS = {
         "it happens (nested calls, program return, label/line honored).",
     ),
     "0.5.1": (
-        "PFC 6: called .dat header/comment lines no longer show twice in the "
+        "6.0 products: called .dat header/comment lines no longer show twice in the "
         "task log, and interrupt_task now stops a task even when the engine "
         "swallows the interrupt inside a FISH command block (any engine: an "
         "interrupt takes effect at the next engine command).",
     ),
     "0.5.2": (
-        "PFC 6: a mistyped execute_code command while a task cycles no longer "
+        "6.0 products: a mistyped execute_code command while a task cycles no longer "
         "silently cuts the task's model cycle/solve short -- the bridge resumes "
         "the remainder and notes it in the task log.",
-        "PFC 6: model new/restore sent through execute_code during cycling no "
+        "6.0 products: model new/restore sent through execute_code during cycling no "
         "longer crashes the engine; interrupting a task keeps its captured "
         "output and leaves the next task's log clean.",
     ),
@@ -85,7 +85,7 @@ ANNOUNCEMENTS = {
         "past the callback repair, and every tool then timed out with the task "
         "uninterruptible until the command finished on its own.",
         "Callbacks are now repaired before every engine command instead of by "
-        "matching command text. Verified on PFC 6, 7 and 9.",
+        "matching command text. Verified on 6.0, 7.0 and 9.x products.",
     ),
     "0.5.4": (
         "Starting the bridge from a product console build now works. It used "
@@ -94,7 +94,7 @@ ANNOUNCEMENTS = {
         "You no longer need the GUI open to use the bridge.",
     ),
     "0.5.5": (
-        "PFC 6: a mistyped command no longer freezes the bridge. The engine's "
+        "6.0 products: a mistyped command no longer freezes the bridge. The engine's "
         "error dialog held every request until someone clicked OK; the bridge "
         "now closes it, and the error comes back the way it always did.",
         "Dialogs that ask you to decide something are still left for you.",

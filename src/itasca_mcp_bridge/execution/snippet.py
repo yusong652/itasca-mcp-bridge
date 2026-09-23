@@ -12,7 +12,7 @@ execute_task scripts (file-backed, registered with TaskManager).
 Two cancellation paths land here:
 
 * L1 (interrupt flag): the ITASCA interrupt callback sets a flag that
-  ``_pfc_interrupt_check`` reads each cycle, raising ``InterruptedError``
+  ``_mcp_bridge_interrupt_check`` reads each cycle, raising ``InterruptedError``
   at the next cycle boundary. Pairs with ``set_current_task`` /
   ``clear_interrupt`` below.
 * L2 (async exc): the timeout handler injects ``BridgeTimeout`` into
@@ -162,7 +162,7 @@ def run_snippet(code, output_buffer, request_id=None, ensure_callbacks=True):
         # original InterruptedError so the caller sees the L1 path.
         if isinstance(e, ValueError):
             msg = str(e)
-            if "InterruptedError" in msg and "_pfc_interrupt_check" in msg:
+            if "InterruptedError" in msg and "_mcp_bridge_interrupt_check" in msg:
                 return {
                     "status": "interrupted",
                     "message": "Execution interrupted by user",

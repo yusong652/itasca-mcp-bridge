@@ -4,7 +4,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/itasca-mcp-bridge)](https://pypi.org/project/itasca-mcp-bridge/)
 
-运行在 ITASCA 产品进程内（PFC、FLAC 等）的 bridge，把产品的 Python SDK
+运行在 ITASCA 产品进程内（PFC、FLAC3D、3DEC、MPoint、MassFlow）的 bridge，把产品的 Python SDK
 以 HTTP API 暴露出来，为 [itasca-mcp](https://pypi.org/project/itasca-mcp/)
 等 MCP 服务端提供执行类工具能力。
 
@@ -93,7 +93,7 @@ python itasca_mcp_bridge.start(mode="console")
 ```
 
 ```console
-$ pfc3d9_console.exe start_bridge.dat
+$ <product>_console.exe start_bridge.dat    # 例如 pfc3d900_console.exe、flac3d900_console.exe
 ```
 
 `start()` 不会返回，这一行之后的内容不会执行；其余操作都走 MCP 工具。
@@ -140,10 +140,9 @@ Itasca MCP Bridge Server
 
 ## 运行要求
 
-- 带内嵌 Python 解释器的 ITASCA 产品。
-  - 已验证：PFC 6.0 / 7.0 / 9.0，GUI 与控制台构建均可。
-  - FLAC3D：bridge 的核心 SDK / 命令机制已验证兼容，端到端完整验证进行中。
-- Python >= 3.6（PFC 6/7 用 Python 3.6，PFC 9 用 Python 3.10）。
+- 带内嵌 Python 解释器的 ITASCA 产品。已在 PFC、FLAC3D、3DEC、MPoint、MassFlow
+  上验证，GUI 与控制台构建均可，覆盖 6.0 / 7.0 / 9.x 三代产品。
+- Python >= 3.6（6.0 / 7.0 代产品内嵌 Python 3.6，9.x 代内嵌 Python 3.10）。
 - 无第三方运行时依赖：传输层仅用标准库（`http.server` + Server-Sent Events）。
 
 ## 故障排查

@@ -8,7 +8,7 @@ from itasca_mcp_bridge import __version__, start
 def main():
     parser = argparse.ArgumentParser(
         prog="itasca-mcp-bridge",
-        description="Itasca MCP Bridge - HTTP bridge for ITASCA codes (PFC, FLAC3D, ...)",
+        description="Itasca MCP Bridge - HTTP bridge for ITASCA products (PFC, FLAC3D, 3DEC, MPoint, MassFlow)",
     )
     parser.add_argument(
         "--version", "-v", action="version", version="itasca-mcp-bridge {}".format(__version__)

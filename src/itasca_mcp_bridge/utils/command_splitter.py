@@ -1,7 +1,7 @@
 """
 Command Splitter - Preprocess scripts to split multi-line itasca.command() calls.
 
-Why one command per call matters (verified live on PFC 6.00.030, 2026-08-04):
+Why one command per call matters (verified live on PFC3D 6.00.030, 2026-08-04):
 
 - The bridge's busy-time reachability (status polls, execute_code
   interleave, interrupt) comes entirely from the cycle callbacks
@@ -16,7 +16,7 @@ Why one command per call matters (verified live on PFC 6.00.030, 2026-08-04):
   all: the bridge is unreachable and uninterruptible for the whole call.
   Splitting aligns command boundaries with the re-registration hook.
   Any engine whose model-reset commands clear the registry is affected,
-  not just PFC 6.
+  not just the 6.0 generation.
 
 FISH definition blocks (``fish define`` / ``fish operator`` / legacy bare
 ``define`` ... ``end``) are the exception and must be kept whole: sending

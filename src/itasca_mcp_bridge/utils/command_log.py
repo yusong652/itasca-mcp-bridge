@@ -95,11 +95,11 @@ def _patched(cmd):
     # type: (str) -> None
     ctx = _stack[-1]
     # `show-message off` suppresses the logging banners in the GUI
-    # console, but PFC 6 does not know the keyword and complains
+    # console, but the 6.0 engine does not know the keyword and complains
     # ("Unused extra parameter") — and a command complaint raised inside
-    # the cycle callback makes PFC 6 silently abort the outer task's
-    # running `model cycle` (verified live on 6.00.030, 2026-08-05;
-    # PFC 7 accepts the keyword). Drop it whenever this command executes
+    # the cycle callback makes the 6.0 engine silently abort the outer task's
+    # running `model cycle` (verified live on PFC3D 6.00.030, 2026-08-05;
+    # 7.0+ accepts the keyword). Drop it whenever this command executes
     # in the cycle callback: the banners are the lesser evil there.
     if _in_cycle_callback():
         _orig_command("program log on truncate")
@@ -172,12 +172,12 @@ def live_capture_paused():
     """Keep the innermost scope's live log session *off* while the body
     runs, flushing what it captured so far first.
 
-    For Python ``print`` calls made mid-command. PFC 6 records the GUI
+    For Python ``print`` calls made mid-command. The 6.0 engine records the GUI
     console's Python output in the ``program log`` file too, so a line
     printed while a session is live reaches the task log twice — once
     from ``sys.stdout``, once from the captured chunk (and the second
     copy is read back from the engine's ANSI-encoded log, so non-ASCII
-    text in it is mojibake). PFC 7/9 do not log Python output, but the
+    text in it is mojibake). 7.0/9.x products do not log Python output, but the
     pause is harmless there. Yields True when a session was paused,
     False (body runs as-is) when no capture scope is mid-command.
     """
@@ -273,7 +273,7 @@ def capture_engine_console(stdout_sink, log_dir):
                     # its pre-interruption output is still in the file.
                     # No `show-message off` here — this command always runs
                     # inside the cycle callback (see _patched above for the
-                    # PFC 6 abort it would otherwise trigger).
+                    # 6.0-engine abort it would otherwise trigger).
                     _orig_command("program log on")
             except Exception as e:
                 logger.warning(

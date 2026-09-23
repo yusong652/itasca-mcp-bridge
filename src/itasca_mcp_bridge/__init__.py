@@ -1,6 +1,7 @@
-"""Itasca MCP Bridge - HTTP bridge for ITASCA codes.
+"""Itasca MCP Bridge - HTTP bridge for ITASCA products.
 
-Runs inside an ITASCA product GUI (PFC, FLAC3D, ...) Python environment
+Runs inside an ITASCA product's (PFC, FLAC3D, 3DEC, MPoint, MassFlow)
+embedded Python environment
 and exposes the product SDK as a remote HTTP + SSE API for MCP clients
 and other tools.
 

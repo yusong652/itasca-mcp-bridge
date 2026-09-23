@@ -4,8 +4,8 @@
 
 [![PyPI](https://img.shields.io/pypi/v/itasca-mcp-bridge)](https://pypi.org/project/itasca-mcp-bridge/)
 
-Runtime bridge that runs inside an ITASCA product process (PFC, FLAC, ...)
-and exposes the product's Python SDK as an HTTP API, enabling execution
+Runtime bridge that runs inside an ITASCA product process (PFC, FLAC3D,
+3DEC, MPoint, MassFlow) and exposes the product's Python SDK as an HTTP API, enabling execution
 tools for MCP servers such as [itasca-mcp](https://pypi.org/project/itasca-mcp/).
 
 The bridge is product-neutral: it drives the host through the shared ITASCA
@@ -102,7 +102,7 @@ python itasca_mcp_bridge.start(mode="console")
 ```
 
 ```console
-$ pfc3d9_console.exe start_bridge.dat
+$ <product>_console.exe start_bridge.dat    # e.g. pfc3d900_console.exe, flac3d900_console.exe
 ```
 
 `start()` does not return, so nothing after that line runs; everything else
@@ -154,11 +154,11 @@ Itasca MCP Bridge Server
 
 ## Requirements
 
-- An ITASCA product with an embedded Python interpreter.
-  - Verified: PFC 6.0 / 7.0 / 9.0, GUI and console builds.
-  - FLAC3D: the bridge's core SDK/command mechanisms are verified
-    compatible; full end-to-end validation is in progress.
-- Python >= 3.6 (PFC 6/7 use Python 3.6; PFC 9 uses Python 3.10).
+- An ITASCA product with an embedded Python interpreter. Verified on PFC,
+  FLAC3D, 3DEC, MPoint and MassFlow, GUI and console builds, across the
+  6.0, 7.0 and 9.x product generations.
+- Python >= 3.6 (6.0/7.0 products embed Python 3.6; 9.x products embed
+  Python 3.10).
 - No third-party runtime dependency: the transport is stdlib-only
   (`http.server` + Server-Sent Events).
 

@@ -13,7 +13,7 @@ Key constraints:
 Architecture:
 - HTTP request thread: calls request_interrupt(task_id) when user cancels
 - Main thread: script execution with set_current_task()/clear_current_task()
-- ITASCA callback: _pfc_interrupt_check() checks flag each cycle
+- ITASCA callback: _mcp_bridge_interrupt_check() checks flag each cycle
 
 Python 3.6 compatible implementation.
 """
@@ -31,6 +31,32 @@ from ..utils import modal_guard
 # Module logger
 logger = logging.getLogger("itasca-mcp-bridge")
 
+# Callback names bridge releases before 0.5.6 registered with the engine.
+# A start() that self-upgrades in a session where the old bridge already
+# ran leaves them in the engine's registry (different names coexist at one
+# position), still pointing at the old module. Removed once at startup so
+# the engine calls one interrupt check per cycle, not two.
+_LEGACY_CALLBACK_NAMES = (
+    ("_pfc_interrupt_check", INTERRUPT_CALLBACK_POSITION),
+    ("_pfc_executor_callback", EXECUTOR_CALLBACK_POSITION),
+)
+
+
+def _remove_legacy_callbacks(itasca_module):
+    # type: (Any) -> None
+    """Drop callbacks registered under the pre-0.5.6 names, if any."""
+    import __main__
+
+    for name, position in _LEGACY_CALLBACK_NAMES:
+        try:
+            itasca_module.remove_callback(name, position)
+        except Exception:
+            pass
+        try:
+            delattr(__main__, name)
+        except Exception:
+            pass
+
 
 def _in_cycle_callback():
     # type: () -> bool
@@ -43,10 +69,10 @@ def _in_cycle_callback():
 
 
 # =============================================================================
-# Cycling Resume After a Callback Command Error (PFC 6)
+# Cycling Resume After a Callback Command Error (6.0 products)
 # =============================================================================
 #
-# On PFC 6 any engine command that fails inside a cycle callback makes the
+# On the 6.0 engine any command that fails inside a cycle callback makes the
 # engine abort the cycling that callback interrupted: the task's running
 # `model cycle` / `model solve` returns at that cycle with no "limit met"
 # line, the script's itasca.command() returns normally and the task ends
@@ -56,7 +82,7 @@ def _in_cycle_callback():
 # execute_code while the task cycles takes the same path, and nothing on
 # the snippet side prevents it -- the abort happens whether or not the
 # snippet catches the exception. Verified live on PFC3D 6.00.030,
-# 2026-09-06; PFC 7.00.161 keeps cycling and is unaffected.
+# 2026-09-06; the 7.0 engine (PFC 7.00.161) keeps cycling and is unaffected.
 #
 # The wrapped itasca.command sees both sides: the snippet's failing
 # command (inside the callback, depth > 0) and the task's cycling command
@@ -119,7 +145,7 @@ def _note_callback_command_failure(itasca_module, cmd, exc):
         note = (
             "\n    [bridge] This command failed inside the cycle callback of a "
             "running task. Engines that abort cycling on a callback command "
-            "error (PFC 6) stop the task's current model cycle/solve here; "
+            "error (6.0 products) stop the task's current model cycle/solve here; "
             "the bridge re-issues the remainder and notes it in the task log."
         )
         if exc.args and isinstance(exc.args[0], str):
@@ -166,7 +192,7 @@ def _resume_command(cmd, cycles_done):
 def _echo_task_log(line):
     # type: (str) -> None
     """Print a bridge line into the task log, outside the live capture
-    session (PFC 6 would log the console copy and deliver it twice)."""
+    session (the 6.0 engine would log the console copy and deliver it twice)."""
     try:
         with live_capture_paused():
             print(line)
@@ -202,7 +228,7 @@ def _resume_if_aborted(itasca_module, run, cmd, start_cycle, seq_before):
         now = _engine_cycle(itasca_module)
         if start_cycle is None or now is None or now != _callback_failure_cycle:
             # Cycle count unavailable, or the engine kept cycling past
-            # the failure (PFC 7+): nothing was aborted.
+            # the failure (7.0+ products): nothing was aborted.
             return
         first = cmd.strip().split("\n", 1)[0]
         resume = _resume_command(cmd, now - start_cycle)
@@ -221,9 +247,9 @@ def _resume_if_aborted(itasca_module, run, cmd, start_cycle, seq_before):
             "(`{}`); resuming with `{}`.".format(now, first, _callback_failure_command, resume)
         )
         resumes += 1
-        _pfc_interrupt_check()
+        _mcp_bridge_interrupt_check()
         run(resume)
-        _pfc_interrupt_check()
+        _mcp_bridge_interrupt_check()
         cmd = resume
         start_cycle = now
 
@@ -397,7 +423,7 @@ def get_exec_thread(request_id):
 # Global Interrupt Check Function (Registered with ITASCA)
 # =============================================================================
 
-def _pfc_interrupt_check():
+def _mcp_bridge_interrupt_check():
     # type: () -> None
     """
     Global function called by ITASCA each cycle.
@@ -457,16 +483,16 @@ def _re_register_callback(itasca_module, position=INTERRUPT_CALLBACK_POSITION):
         return
 
     import __main__
-    __main__._pfc_interrupt_check = _pfc_interrupt_check  # type: ignore[attr-defined]
-    register_cycle_callback(itasca_module, "_pfc_interrupt_check", position)
+    __main__._mcp_bridge_interrupt_check = _mcp_bridge_interrupt_check  # type: ignore[attr-defined]
+    register_cycle_callback(itasca_module, "_mcp_bridge_interrupt_check", position)
     logger.debug("Interrupt callback (re)registered")
 
     # Also re-register executor callback if it was registered
     try:
-        from .cycle_executor import _pfc_executor_callback, is_executor_callback_registered
+        from .cycle_executor import _mcp_bridge_executor_callback, is_executor_callback_registered
         if is_executor_callback_registered():
-            __main__._pfc_executor_callback = _pfc_executor_callback  # type: ignore[attr-defined]
-            register_cycle_callback(itasca_module, "_pfc_executor_callback", EXECUTOR_CALLBACK_POSITION)
+            __main__._mcp_bridge_executor_callback = _mcp_bridge_executor_callback  # type: ignore[attr-defined]
+            register_cycle_callback(itasca_module, "_mcp_bridge_executor_callback", EXECUTOR_CALLBACK_POSITION)
             logger.debug("Executor callback (re)registered")
     except ImportError:
         pass  # cycle_executor not available
@@ -525,7 +551,7 @@ def ensure_cycle_callbacks():
 # ``_patched``'s ``finally`` executes while the task's interrupt flag is
 # still set — and raising there would skip the log-off, leaving the engine's
 # log session open and dropping the interrupted command's captured output.
-# The next command then inherits a live session: on PFC 6 its Python prints
+# The next command then inherits a live session: on the 6.0 engine its Python prints
 # are logged and delivered twice, and ``program log on truncate`` does not
 # truncate, so a stale banner leads the next task's log.
 _LOG_CONTROL_RE = re.compile(r"^\s*pro\w*\s+log\b", re.IGNORECASE)
@@ -537,7 +563,7 @@ def register_interrupt_callback(itasca_module, position=INTERRUPT_CALLBACK_POSIT
     Register interrupt callback with ITASCA.
 
     Must be called once during server startup. This function:
-    1. Injects _pfc_interrupt_check into __main__ namespace
+    1. Injects _mcp_bridge_interrupt_check into __main__ namespace
     2. Registers callback with itasca.set_callback()
     3. Wraps itasca.command to auto-re-register after model new/restore
 
@@ -558,15 +584,17 @@ def register_interrupt_callback(itasca_module, position=INTERRUPT_CALLBACK_POSIT
     try:
         # Inject function into __main__ namespace (required for ITASCA lookup)
         import __main__
-        __main__._pfc_interrupt_check = _pfc_interrupt_check  # type: ignore[attr-defined]
+        __main__._mcp_bridge_interrupt_check = _mcp_bridge_interrupt_check  # type: ignore[attr-defined]
+
+        _remove_legacy_callbacks(itasca_module)
 
         # Register with ITASCA (remove-before-register: idempotent across versions;
-        # PFC 6.0 set_callback is strict and model restore does not clear the
+        # the 6.0 engine's set_callback is strict and model restore does not clear the
         # registry, so a plain set_callback would collide. See register_cycle_callback.)
-        register_cycle_callback(itasca_module, "_pfc_interrupt_check", position)
+        register_cycle_callback(itasca_module, "_mcp_bridge_interrupt_check", position)
 
         # Wrap itasca.command to:
-        #   1. Keep _pfc_interrupt_check visible in the current __main__ (some
+        #   1. Keep _mcp_bridge_interrupt_check visible in the current __main__ (some
         #      contexts like IPython %run temporarily replace sys.modules['__main__'],
         #      which hides the attribute injected at startup and makes ITASCA's
         #      callback lookup fail with "function is not defined").
@@ -580,13 +608,13 @@ def register_interrupt_callback(itasca_module, position=INTERRUPT_CALLBACK_POSIT
             # Idempotent; costs two attr ops per callback when already injected.
             main_mod = _sys.modules.get('__main__')
             if main_mod is not None:
-                if getattr(main_mod, '_pfc_interrupt_check', None) is not _pfc_interrupt_check:
-                    main_mod._pfc_interrupt_check = _pfc_interrupt_check  # type: ignore[attr-defined]
+                if getattr(main_mod, '_mcp_bridge_interrupt_check', None) is not _mcp_bridge_interrupt_check:
+                    main_mod._mcp_bridge_interrupt_check = _mcp_bridge_interrupt_check  # type: ignore[attr-defined]
                 # Also keep executor callback visible if it's been registered
                 try:
-                    from .cycle_executor import _pfc_executor_callback, is_executor_callback_registered
-                    if is_executor_callback_registered() and getattr(main_mod, '_pfc_executor_callback', None) is not _pfc_executor_callback:
-                        main_mod._pfc_executor_callback = _pfc_executor_callback  # type: ignore[attr-defined]
+                    from .cycle_executor import _mcp_bridge_executor_callback, is_executor_callback_registered
+                    if is_executor_callback_registered() and getattr(main_mod, '_mcp_bridge_executor_callback', None) is not _mcp_bridge_executor_callback:
+                        main_mod._mcp_bridge_executor_callback = _mcp_bridge_executor_callback  # type: ignore[attr-defined]
                 except ImportError:
                     pass
 
@@ -601,7 +629,7 @@ def register_interrupt_callback(itasca_module, position=INTERRUPT_CALLBACK_POSIT
 
             # Every command boundary is an interrupt point, not only
             # cycle callbacks. The engine does not always propagate the
-            # callback's InterruptedError: PFC 6 swallows it when the
+            # callback's InterruptedError: the 6.0 engine swallows it when the
             # cycling was started from a FISH `command` block, prints
             # the traceback to the console and carries on with the next
             # command as if nothing happened (verified live on 6.00.030,
@@ -613,7 +641,7 @@ def register_interrupt_callback(itasca_module, position=INTERRUPT_CALLBACK_POSIT
             # is pending.
             checked = _LOG_CONTROL_RE.match(cmd) is None
             if checked:
-                _pfc_interrupt_check()
+                _mcp_bridge_interrupt_check()
                 # Make sure the cycle callbacks are live BEFORE handing the
                 # engine a command that might cycle. They are the bridge's
                 # only window into a running engine: the engine holds the GIL
@@ -649,7 +677,7 @@ def register_interrupt_callback(itasca_module, position=INTERRUPT_CALLBACK_POSIT
             try:
                 result = _original_command(cmd)
             except Exception as e:
-                # A failing command inside the cycle callback makes PFC 6
+                # A failing command inside the cycle callback makes the 6.0 engine
                 # abort the cycling it interrupted (see the resume section
                 # above); record it for the outer cycling command.
                 if _in_cycle_callback() and not isinstance(e, InterruptedError):
@@ -658,7 +686,7 @@ def register_interrupt_callback(itasca_module, position=INTERRUPT_CALLBACK_POSIT
             finally:
                 modal_guard.left()
             if checked:
-                _pfc_interrupt_check()
+                _mcp_bridge_interrupt_check()
                 _resume_if_aborted(itasca_module, _original_command, cmd, start_cycle, seq_before)
             return result
 

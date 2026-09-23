@@ -259,12 +259,12 @@ class TestExpand:
         fake = Fake()
         assert register_interrupt_callback(fake) is True
         _write(tmp_path / "run.p3dat", "model new\nmodel cycle 10\n")
-        base = fake.set_calls.count("_pfc_interrupt_check")
+        base = fake.set_calls.count("_mcp_bridge_interrupt_check")
         fake.command("program call 'run.p3dat'")
         assert fake.commands == ["model new", "model cycle 10"]
         # One per expanded command; the `program call` line itself is
         # consumed by the expander and never reaches the engine.
-        assert fake.set_calls.count("_pfc_interrupt_check") == base + 2
+        assert fake.set_calls.count("_mcp_bridge_interrupt_check") == base + 2
 
 
 class TestOutputFidelity:
@@ -278,7 +278,7 @@ class TestOutputFidelity:
         assert out[1:] == ["; stage 1", "; stage 2"]
 
     def test_header_and_comments_printed_with_capture_paused(self, tmp_path, monkeypatch):
-        # PFC 6 logs console prints into the live `program log` session,
+        # The 6.0 engine logs console prints into the live `program log` session,
         # so bridge/comment lines must be printed while the session is
         # paused or the task log gets them twice.
         from contextlib import contextmanager

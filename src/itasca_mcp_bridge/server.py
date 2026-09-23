@@ -13,7 +13,7 @@ using ``itasca.command()``. This module only owns transport; the main-thread
 execution semantics (queue vs cycle-gap callback, two-layer termination) live
 in ``execution`` / ``handlers.exec_strategy`` and are untouched by the wire.
 
-Python 3.6 compatible implementation (PFC 6/7 embedded interpreter).
+Python 3.6 compatible implementation (the 6.0/7.0 products' embedded interpreter).
 """
 
 import http.server

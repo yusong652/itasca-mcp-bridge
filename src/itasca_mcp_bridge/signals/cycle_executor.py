@@ -12,7 +12,7 @@ through ``MainThreadExecutor`` directly.
 
 Architecture:
 - HTTP request thread: calls ``submit_snippet(code, request_id)`` -> queued
-- ITASCA callback:  ``_pfc_executor_callback()`` batch-executes pending
+- ITASCA callback:  ``_mcp_bridge_executor_callback()`` batch-executes pending
 - Results returned via ``Future`` objects
 
 Python 3.6 compatible implementation.
@@ -126,7 +126,7 @@ def _run_pending_snippet(code, request_id, future):
         future.set_exception(e)
 
 
-def _pfc_executor_callback():
+def _mcp_bridge_executor_callback():
     # type: () -> None
     """
     ITASCA callback - batch-execute pending snippets.
@@ -177,7 +177,7 @@ def register_executor_callback(itasca_module, position=EXECUTOR_CALLBACK_POSITIO
     Register the snippet-batching callback with ITASCA.
 
     Must be called once during server startup. This function:
-    1. Injects ``_pfc_executor_callback`` into ``__main__`` namespace
+    1. Injects ``_mcp_bridge_executor_callback`` into ``__main__`` namespace
     2. Registers callback with ``itasca.set_callback()``
 
     Args:
@@ -199,10 +199,10 @@ def register_executor_callback(itasca_module, position=EXECUTOR_CALLBACK_POSITIO
     try:
         # Inject function into __main__ namespace (required for ITASCA lookup)
         import __main__
-        __main__._pfc_executor_callback = _pfc_executor_callback  # type: ignore[attr-defined]
+        __main__._mcp_bridge_executor_callback = _mcp_bridge_executor_callback  # type: ignore[attr-defined]
 
         # Register with ITASCA (remove-before-register; see register_cycle_callback).
-        register_cycle_callback(itasca_module, "_pfc_executor_callback", position)
+        register_cycle_callback(itasca_module, "_mcp_bridge_executor_callback", position)
 
         _callback_registered = True
         logger.info("Executor callback registered (position=%.1f)", position)

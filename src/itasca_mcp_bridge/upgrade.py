@@ -15,7 +15,7 @@ path (offline machine, blocked proxy, pip error) falls back to starting
 the already-installed version. The in-process pip call itself cannot be
 timed out, which is exactly why the cheap pre-check exists.
 
-Must stay compatible with Python 3.6 (PFC 6/7 embedded interpreter).
+Must stay compatible with Python 3.6 (the 6.0/7.0 products' embedded interpreter).
 """
 
 import importlib
@@ -150,10 +150,11 @@ def _resolve_pip_main():
     """Locate pip's callable entry point.
 
     There is no single stable location. `pip.main` exists in pip <= 9
-    (what PFC 6.0 ships), was removed in pip 10.0, and was later restored
-    as an internal-only shim; `pip._internal.main` covers pip 10 .. 19.2;
-    `pip._internal.cli.main.main` covers pip >= 19.3. The embedded PFC
-    Python may carry any pip version, so probe each location in turn
+    (what the 6.0 products ship), was removed in pip 10.0, and was later
+    restored as an internal-only shim; `pip._internal.main` covers pip
+    10 .. 19.2; `pip._internal.cli.main.main` covers pip >= 19.3. A
+    product's embedded Python may carry any pip version, so probe each
+    location in turn
     rather than guessing from the pip or Python version.
     """
     try:
@@ -169,7 +170,7 @@ def _resolve_pip_main():
     except Exception:
         pass
     try:
-        from pip import main as pip_main  # pip <= 9 (PFC 6.0)
+        from pip import main as pip_main  # pip <= 9 (6.0 products)
 
         return pip_main
     except Exception:
@@ -201,7 +202,8 @@ class _StreamProxy(object):
     download progress bar calls ``file.isatty()`` unconditionally during
     construction — the AttributeError aborts the download and therefore the
     whole upgrade. Affects every pip that vendors ``progress`` (stock pip 9
-    on PFC 6/7, reproduced up to pip 21). Delegates everything else to the
+    on the 6.0/7.0 products, reproduced up to pip 21). Delegates everything
+    else to the
     wrapped stream.
     """
 

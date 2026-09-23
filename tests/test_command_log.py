@@ -5,7 +5,7 @@ Uses a fake `itasca` module that simulates the parts of ITASCA's
 `program log` machinery the capture relies on: log-file switching (ending
 a live session), truncate-vs-append on `log on`, and command echo +
 output written only while logging is on. `model cycle` fires a registered
-hook mid-command, emulating PFC's cycle-gap callback — the window where a
+hook mid-command, emulating the engine's cycle-gap callback — the window where a
 snippet's nested capture scope runs inside the task's.
 """
 
@@ -209,7 +209,7 @@ class TestNestedScope:
         assert fake_itasca.logging is False  # outer's log off ran at the end
 
     def test_no_show_message_keyword_inside_cycle_callback(self, fake_itasca, tmp_path):
-        # PFC 6 does not know `show-message` and complains — and a
+        # The 6.0 engine does not know `show-message` and complains — and a
         # command complaint raised inside the cycle callback silently
         # aborts the outer task's running `model cycle` (the engine
         # stops at the interleave cycle with no "cycle limit met").
@@ -361,7 +361,7 @@ class TestFlushLiveCapture:
 
 class TestLiveCapturePaused:
     """live_capture_paused() keeps the live session OFF while the body
-    runs. PFC 6 logs the console copy of Python prints into the
+    runs. The 6.0 engine logs the console copy of Python prints into the
     `program log` file, so a print made while a session is live would
     be delivered twice (sys.stdout + captured chunk)."""
 
@@ -390,7 +390,7 @@ class TestLiveCapturePaused:
                 seen["paused"] = paused
                 seen["logging_in_body"] = fake_itasca.logging
                 seen["sink_in_body"] = sink.getvalue()
-                # What PFC 6 does with a console print while logging is
+                # What the 6.0 engine does with a console print while logging is
                 # on: the engine would have appended it to the log file.
                 fake_itasca._append("; comment printed here\n")
             seen["logging_after"] = fake_itasca.logging

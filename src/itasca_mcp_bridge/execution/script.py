@@ -176,7 +176,7 @@ class ScriptRunner:
             # ITASCA wraps callback exceptions in ValueError
             if isinstance(e, ValueError):
                 error_str = str(e)
-                if "InterruptedError" in error_str and "_pfc_interrupt_check" in error_str:
+                if "InterruptedError" in error_str and "_mcp_bridge_interrupt_check" in error_str:
                     logger.info("Script interrupted (via ITASCA callback): {}".format(script_path))
                     return {
                         "status": "interrupted",
@@ -185,7 +185,7 @@ class ScriptRunner:
                         "output": output_text,
                     }
 
-            # Engine-agnostic fallback: PFC 6 wraps the callback's
+            # Engine-agnostic fallback: the 6.0 engine wraps the callback's
             # InterruptedError in an opaque RuntimeError ("Error in
             # execution - See the Itasca Console...") with no trace of
             # the original exception, so string matching can't identify

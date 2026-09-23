@@ -115,7 +115,7 @@ ball generate radius 0.1 number 10
 
 def test_unrelated_command_attr_is_not_touched():
     # `something.command(...)` where `something` is not bound to itasca
-    # must NOT be treated as a PFC command.
+    # must NOT be treated as an engine command.
     src = '''
 import some_other_module as other
 other.command("""
@@ -201,7 +201,7 @@ model cycle 10
 
 
 def test_legacy_bare_define_block_kept_whole():
-    # PFC 5-era scripts use bare `define ... end`; still accepted by
+    # 5.0-era scripts use bare `define ... end`; still accepted by
     # newer engines, so the block detection must cover it.
     src = '''
 import itasca
