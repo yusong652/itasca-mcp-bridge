@@ -51,9 +51,12 @@ from .history import SOURCE_COMMAND, SOURCE_PYTHON
 
 logger = logging.getLogger("itasca-mcp-bridge")
 
-# Native prompt widget and the pane its output lands in, by C++ class name.
-PROMPT_WIDGET_CLASS = "itasca3d::PromptLineEdit"
-OUTPUT_WIDGET_CLASS = "itascaxd::TextOutput"
+# Native prompt widget and the pane its output lands in, by C++ class name
+# without its namespace: the 3D products put the prompt in `itasca3d::`,
+# the 2D products (PFC2D, FLAC2D, MPoint2D) in `itasca2d::`, and the output
+# pane sits in the shared `itascaxd::` for both.
+PROMPT_WIDGET_CLASS = "PromptLineEdit"
+OUTPUT_WIDGET_CLASS = "TextOutput"
 PROMPT_SIGNAL = "myReturnPressed(QString)"
 
 # A command's output is closed once the output pane has been quiet this
@@ -563,13 +566,14 @@ def _class_chain(obj):
 
 
 def _find_widget(qt_widgets, class_name):
+    """The first widget whose own C++ class is ``class_name``, namespace aside."""
     try:
         widgets = qt_widgets.QApplication.allWidgets()
     except Exception:
         return None
     for widget in widgets:
         chain = _class_chain(widget)
-        if chain and chain[0] == class_name:
+        if chain and chain[0].split("::")[-1] == class_name:
             return widget
     return None
 

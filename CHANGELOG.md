@@ -25,13 +25,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   prompt is hooked through the prompt widget's own `myReturnPressed`
   signal, with an event filter on the Return key as the fallback where the
   Qt binding cannot connect it; the command's output is cut out of the
-  console pane between its echo line and the next. Measured on PFC3D 6.0
-  (Python 3.6, IPython 6.2, PySide2 5.11) and PFC3D 9.7 (Python 3.10,
-  IPython 8.16, PySide6 6.8) with the same sequence: lines entered faster
-  than the engine runs them, repeats of the same line, and engine errors
-  are all attributed correctly on both. GUI only: a console build has
-  neither pane nor prompt widget, and `console_history` there answers
-  with no entries.
+  console pane between its echo line and the next. The prompt widget is
+  matched by class name without its namespace, since the 3D products keep
+  it in `itasca3d::` and the 2D products in `itasca2d::`. Measured on
+  PFC3D 6.0 (Python 3.6, IPython 6.2, PySide2 5.11), PFC3D 7.0, PFC3D 9.7
+  (Python 3.10, IPython 8.16, PySide6 6.8) and MPoint2D 9.7 with the same
+  sequence: lines entered faster than the engine runs them, repeats of
+  the same line, and engine errors are all attributed correctly. GUI
+  only: a console build has neither pane nor prompt widget, and
+  `console_history` there answers with no entries.
 
 ### Changed
 - README, package metadata, docstrings and comments now describe the

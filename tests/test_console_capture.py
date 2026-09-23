@@ -509,6 +509,19 @@ def test_command_capture_falls_back_to_event_filter(history, gui):
     assert hook._pending[0]["command"] == "fish list"
 
 
+def test_command_capture_finds_the_2d_products_prompt(history):
+    """PFC2D / FLAC2D / MPoint2D put the prompt in itasca2d::, not itasca3d::."""
+    prompt_box = _Widget(["itasca2d::Prompt", "QWidget", "QObject"])
+    _Widget(["QLabel", "QFrame", "QWidget", "QObject"], parent=prompt_box, text="mpoint2d>")
+    prompt = _Widget(["itasca2d::PromptLineEdit", "QLineEdit", "QWidget", "QObject"], parent=prompt_box, text="")
+    output = _Widget(["itascaxd::TextOutput", "QPlainTextEdit", "QAbstractScrollArea"], plainText="")
+    hook = CommandLineCapture(history, _Core, _Widgets([prompt_box, output, prompt]))
+    assert hook.install() is True
+    assert "myReturnPressed(QString)" in prompt.signals
+    prompt.emit("myReturnPressed(QString)", "model list")
+    assert hook._pending[0]["prompt"] == "mpoint2d>"
+
+
 def test_command_capture_retries_until_widgets_appear(history):
     empty = _Widgets([])
     hook = CommandLineCapture(history, _Core, empty)
