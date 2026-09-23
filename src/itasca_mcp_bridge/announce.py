@@ -99,6 +99,14 @@ ANNOUNCEMENTS = {
         "now closes it, and the error comes back the way it always did.",
         "Dialogs that ask you to decide something are still left for you.",
     ),
+    "0.6.0": (
+        "Your agent can now see what you type into the product GUI. Cells you "
+        "run in the IPython pane and lines you enter at the command prompt, "
+        "with what they printed, are handed to the agent on its next tool "
+        "call, so it keeps up with what you do at the keyboard.",
+        "Needs the matching itasca-mcp release on the agent side; older ones "
+        "simply do not ask.",
+    ),
 }
 
 

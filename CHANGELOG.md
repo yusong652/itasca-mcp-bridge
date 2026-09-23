@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-23
+
 ### Added
 - The bridge now records what the person at the keyboard types into the
   product GUI and hands it to the client through a new `console_history`

@@ -150,7 +150,7 @@ Expected output:
 ============================================================
 Itasca MCP Bridge Server
 ============================================================
-  Version:  0.5.4
+  Version:  0.6.0
   URL:      http://localhost:9001
   Log:      /your-working-dir/.itasca-mcp-bridge/bridge.log
   Mode:     Qt timer
