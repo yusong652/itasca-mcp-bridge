@@ -29,12 +29,31 @@ Native command prompt
     up to the next echo line. So the entry is opened on the signal and
     closed once the pane has gone quiet or the next echo line has arrived.
 
+    The engine runs the line only when it is free: a line entered while a
+    command is executing (a ``model cycle`` issued by a script, say) waits
+    in the engine's own queue and runs when that command finishes -- or
+    never, since an error or an interrupt flushes that queue. A line whose
+    echo has not appeared by the time the pane first settles is therefore
+    recorded at once with ``status="queued"``, so the client learns what
+    was typed without waiting, and recorded again with its output, as
+    ``status="ran"``, when the echo finally arrives. A queued line still
+    without its echo once the engine is idle again was flushed: it is let
+    go, so that a later line with the same text is not matched to the
+    wrong echo. Whether the engine is busy is read from the product's own
+    ``itasca._cycling()`` (the prompt label keeps reading ``pfc3d>`` while
+    a script cycles; it only says ``BUSY>`` for what the GUI itself runs).
+
     PySide2 as shipped with the 6.0/7.0 products has no shiboken, so the
     widgets it hands back are generic ``QWidget`` wrappers with none of the
     subclass API: text is read through ``property("text")`` and signals are
     connected old-style through ``QObject.connect(obj, SIGNAL(...), fn)``.
     Where that connect is unavailable the hook falls back to an event
-    filter on the Return key, which needs nothing from the binding.
+    filter on the Return key, which needs nothing from the binding. That
+    PySide2 also ties a wrapper's life to its parent's wrapper once
+    ``parent()`` has been called on it: when the parent wrapper is
+    collected the child wrapper is marked deleted, C++ object or not. The
+    prompt's parent wrapper is therefore taken once and kept for the life
+    of the hook.
 
 Both hooks are GUI-only: a console build has no pane and no prompt widget,
 and the person there types into the same terminal the bridge is logging to.
@@ -60,11 +79,15 @@ OUTPUT_WIDGET_CLASS = "TextOutput"
 PROMPT_SIGNAL = "myReturnPressed(QString)"
 
 # A command's output is closed once the output pane has been quiet this
-# long after the last change, unless its echo line has not appeared yet.
+# long after the last change. A line whose echo has not appeared by then
+# is queued in the engine and is recorded as such.
 OUTPUT_SETTLE_MS = 300
-# How long to keep waiting for the echo line before giving up on it: the
-# engine may be busy with something else and run the line later.
-OUTPUT_ECHO_WAIT_MS = 15000
+
+# Entry status for a line the engine had not run when it was recorded,
+# and for the follow-up entry that carries its output once it has run.
+# A line that ran at once has no status.
+STATUS_QUEUED = "queued"
+STATUS_RAN = "ran"
 
 # The prompt widgets may not exist yet when start() runs from a launch
 # script; look again a few times before giving up.
@@ -319,18 +342,25 @@ def output_reports_error(output):
 class CommandLineCapture(object):
     """Records lines entered at the product's native command prompt."""
 
-    def __init__(self, history, qt_core, qt_widgets):
+    def __init__(self, history, qt_core, qt_widgets, engine_busy=None):
         self._history = history
         self._core = qt_core
         self._widgets = qt_widgets
+        # Whether the engine is running a command right now; the default
+        # asks the product. A test passes its own.
+        self._engine_busy = engine_busy or self._read_engine_busy
         self._prompt_widget = None
+        # The prompt widget's parent, kept so its wrapper outlives every
+        # label read (see the module docstring on PySide2 wrapper lifetime).
+        self._prompt_parent = None
         self._output_widget = None
         # The prompt label as last read while idle ("pfc3d>"). It is read
         # again at every Return, because the label changes with the engine's
         # state: it reads "BUSY>" while a data file or a solve is running.
         self._prompt = None  # type: str
-        # Lines entered but not yet recorded, oldest first. More than one
-        # only when lines are entered faster than the engine runs them.
+        # Lines entered whose output has not been recorded, oldest first.
+        # More than one when lines are entered faster than the engine runs
+        # them; each carries whether it has been recorded as queued.
         self._pending = []  # type: list
         self._settle_timer = None
         self._find_timer = None
@@ -377,6 +407,7 @@ class CommandLineCapture(object):
             return False
         output_widget = _find_widget(self._widgets, OUTPUT_WIDGET_CLASS)
         self._prompt_widget = prompt_widget
+        self._prompt_parent = _widget_parent(prompt_widget)
         self._output_widget = output_widget
 
         if not self._connect(prompt_widget, PROMPT_SIGNAL, self._on_return_pressed):
@@ -436,6 +467,7 @@ class CommandLineCapture(object):
         self._settle_timer = None
         self._find_timer = None
         self._prompt_widget = None
+        self._prompt_parent = None
         self._output_widget = None
 
     # -- recording -----------------------------------------------------------
@@ -458,14 +490,18 @@ class CommandLineCapture(object):
             return
         if not command:
             return
-        prompt = _read_prompt_label(self._prompt_widget)
+        if self._output_widget is None:
+            # Nothing to match an echo against: the line is all there is.
+            self._record(command, "")
+            return
+        prompt = _read_prompt_label(self._prompt_widget, self._prompt_parent)
         if prompt is not None:
             self._prompt = prompt
         self._pending.append({
             "command": command,
             "prompt": self._prompt,
             "offset": len(self._output_text()),
-            "waited_ms": 0,
+            "queued": False,
         })
         self._restart_settle_timer()
 
@@ -485,40 +521,80 @@ class CommandLineCapture(object):
     def _on_settled(self):
         """The pane has been quiet for a while: record what can be recorded.
 
-        Pending lines are closed oldest first. A line whose echo has not
-        appeared is waited for (the engine may still be busy) and closes
-        the ones behind it too, since they cannot have run before it. Once
-        the wait runs out it is recorded without output and the queue moves
-        on.
+        Pending lines are closed oldest first, since the engine runs them
+        in order. A line whose echo has not appeared is still queued in the
+        engine and holds up the ones behind it, which cannot have run
+        before it. It was dropped instead (an error or an interrupt
+        flushes the engine's queue) when a later line has run, or when the
+        engine is idle and still has not run it; a dropped line is let go,
+        its queued entry standing as the record. Whatever is still pending
+        afterwards is recorded as queued, once, so the client sees the line
+        now and its output later. The pane's next change brings the timer
+        back.
         """
+        text = self._output_text()
         while self._pending:
             head = self._pending[0]
-            text = self._output_text()
             output, found, _ended, end = locate_command_output(
                 text, head["offset"], head["prompt"], head["command"]
             )
-            if not found:
-                head["waited_ms"] += OUTPUT_SETTLE_MS
-                if head["waited_ms"] < OUTPUT_ECHO_WAIT_MS:
-                    self._restart_settle_timer()
-                    return
-                output = ""
-            self._pending.pop(0)
-            if self._pending:
-                # The next line's echo comes after this one's output; a
+            if found:
+                self._pending.pop(0)
+                # Every later line's echo comes after this one's output; a
                 # repeat of the same command must not claim this echo again.
-                following = self._pending[0]
-                if following["offset"] < end:
-                    following["offset"] = end
-            self._record(head["command"], output)
+                for item in self._pending:
+                    if item["offset"] < end:
+                        item["offset"] = end
+                self._record(head["command"], output, STATUS_RAN if head["queued"] else None)
+                continue
+            dropped = self._later_line_ran(text) or (head["queued"] and not self._engine_busy())
+            if not dropped:
+                break
+            self._pending.pop(0)
+        for item in self._pending:
+            if not item["queued"]:
+                item["queued"] = True
+                self._record(item["command"], "", STATUS_QUEUED)
 
-    def _record(self, command, output):
+    def _read_engine_busy(self):
+        # type: () -> bool
+        """Whether the engine is running a command, as far as can be told.
+
+        ``itasca._cycling()`` is the product's own answer and covers a
+        scripted command too; the prompt label reading ``BUSY>`` covers a
+        data file or a solve the GUI itself is running. When neither can be
+        read the engine is taken to be busy, so a queued line waits for a
+        later line to prove it dropped rather than being let go on a guess.
+        """
+        label = _prompt_label_text(self._prompt_widget, self._prompt_parent)
+        if label is not None and label.upper() == "BUSY>":
+            return True
+        try:
+            import itasca
+
+            return bool(itasca._cycling())
+        except Exception:
+            return True
+
+    def _later_line_ran(self, text):
+        # type: (str) -> bool
+        """Whether a line entered after the head has echoed already."""
+        for item in self._pending[1:]:
+            _output, found, _ended, _end = locate_command_output(
+                text, item["offset"], item["prompt"], item["command"]
+            )
+            if found:
+                return True
+        return False
+
+    def _record(self, command, output, status=None):
         try:
             self._history.add(
                 SOURCE_COMMAND,
                 command,
                 output=output,
                 success=not output_reports_error(output),
+                status=status,
             )
         except Exception as e:
             logger.error("Failed to record command entry: %s", e)
@@ -578,17 +654,29 @@ def _find_widget(qt_widgets, class_name):
     return None
 
 
-def _read_prompt_label(prompt_widget):
-    # type: (object) -> str
-    """The ``pfc3d>`` label next to the prompt line, or None if not readable.
+def _widget_parent(widget):
+    # type: (object) -> object
+    """``widget.parent()``, or None when the binding cannot give it."""
+    try:
+        return widget.parent()
+    except Exception:
+        return None
 
-    None also while the engine is busy: the label then reads ``BUSY>``,
-    which is not what the echo line will carry.
+
+def _prompt_label_text(prompt_widget, parent=None):
+    # type: (object, object) -> str
+    """The text of the label next to the prompt line, or None if not readable.
+
+    ``parent`` is the prompt widget's parent when the caller already holds
+    it; the label is one of its children. Without it the parent is asked
+    for here, which on PySide2 5.11 leaves ``prompt_widget`` unusable once
+    that parent wrapper is collected (see the module docstring).
     """
     if prompt_widget is None:
         return None
+    if parent is None:
+        parent = _widget_parent(prompt_widget)
     try:
-        parent = prompt_widget.parent()
         siblings = parent.children() if parent is not None else []
     except Exception:
         return None
@@ -603,9 +691,22 @@ def _read_prompt_label(prompt_widget):
         if not isinstance(text, str):
             continue
         text = text.strip()
-        if text.endswith(">") and text.upper() != "BUSY>":
+        if text.endswith(">"):
             return text
     return None
+
+
+def _read_prompt_label(prompt_widget, parent=None):
+    # type: (object, object) -> str
+    """The ``pfc3d>`` prefix the echo line will carry, or None if not readable.
+
+    None also while the GUI is busy: the label then reads ``BUSY>``, which
+    is not what the echo line will carry.
+    """
+    text = _prompt_label_text(prompt_widget, parent)
+    if text is None or text.upper() == "BUSY>":
+        return None
+    return text
 
 
 # ---------------------------------------------------------------------------

@@ -6,7 +6,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- A command line typed while the engine is busy (a `model cycle` or
+  `model solve` issued by a script, say) is now recorded as soon as the
+  output pane first settles without its echo, with `status: "queued"`,
+  instead of after a 15 s wait for the echo with no output. The engine
+  runs such a line only when the current command finishes, so the client
+  now learns what was typed right away, and once the line runs a second
+  entry for it carries the output with `status: "ran"`. A line that ran
+  at once has no `status`. A queued line the engine discarded (an error
+  or an interrupt flushes its input queue) is let go as soon as a later
+  line has run, or as soon as the engine is idle (`itasca._cycling()`,
+  or the prompt label reading `BUSY>` for what the GUI itself runs)
+  without having run it, so it neither holds up the lines behind it nor
+  claims the echo of a later line with the same text.
+
 ### Fixed
+- Reading the prompt label no longer leaves the prompt widget's PySide2
+  wrapper marked "already deleted". PySide2 5.11 (the 6.0/7.0 products)
+  ties a child wrapper's life to the parent wrapper handed out by
+  `parent()`, and each label read asked for a fresh one, so the first
+  garbage collection after a Return invalidated the prompt widget: the
+  label could never be read again (the echo match fell back to the
+  generic `word>` pattern) and `uninstall` worked on a dead wrapper. The
+  parent is now taken once at install and kept for the life of the hook.
 - Importing `itasca_mcp_bridge.__main__` no longer starts the bridge. The
   `itasca-mcp-bridge` console script imports that module to reach `main`,
   so the bare module-level call started the server during the import and
