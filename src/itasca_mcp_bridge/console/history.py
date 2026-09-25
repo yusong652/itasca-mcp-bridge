@@ -69,8 +69,8 @@ class ConsoleHistory:
 
     # -- writing -------------------------------------------------------------
 
-    def add(self, source, input_text, output="", result=None, success=True):
-        # type: (str, str, str, object, bool) -> dict
+    def add(self, source, input_text, output="", result=None, success=True, status=None):
+        # type: (str, str, str, object, bool, str) -> dict
         """Record one entry and return it.
 
         ``source`` is ``"python"`` or ``"command"``; ``input_text`` is what
@@ -78,6 +78,10 @@ class ConsoleHistory:
         a Python expression cell, if any; ``success`` is False when the cell
         raised. Command-line entries carry no result and report success
         unless the engine's error marker was seen in their output.
+
+        ``status`` is set on a command line the engine had not run when it
+        was recorded (``"queued"``) and on the later entry that carries its
+        output (``"ran"``); an entry without it ran when it was typed.
         """
         entry = {
             "id": None,
@@ -88,6 +92,8 @@ class ConsoleHistory:
             "success": bool(success),
             "timestamp": time.time(),
         }
+        if status is not None:
+            entry["status"] = status
         with self._lock:
             entry["id"] = self._next_id
             self._next_id += 1

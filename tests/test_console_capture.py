@@ -388,6 +388,23 @@ def test_prompt_label_is_read_at_each_return(history, gui):
     assert hook._pending[2]["prompt"] == "flac3d>"
 
 
+def test_prompt_label_is_read_through_the_parent_taken_at_install(history, gui):
+    """PySide2 5.11 marks the prompt wrapper deleted once a parent() wrapper
+    it handed out is collected; the hook never asks for the parent again."""
+    hook = CommandLineCapture(history, _Core, gui.widgets)
+    hook.install()
+    assert hook._prompt_parent is gui.prompt.parent()
+
+    def dead_parent():
+        raise RuntimeError("Internal C++ object (PySide2.QtWidgets.QWidget) already deleted.")
+
+    gui.prompt.parent = dead_parent
+    gui.label.setProperty("text", "flac3d>")
+    gui.prompt.emit("myReturnPressed(QString)", "a")
+    assert hook._pending[0]["prompt"] == "flac3d>"
+    assert capture_module._read_prompt_label(gui.prompt) is None  # what asking again would give
+
+
 def test_command_capture_records_command_with_its_output(history, gui):
     CommandLineCapture(history, _Core, gui.widgets).install()
     _append_output(gui, "pfc3d>program log-file 'x.log'\n")
@@ -406,21 +423,147 @@ def test_command_capture_records_command_with_its_output(history, gui):
     assert entry["success"] is True
 
 
-def test_command_capture_waits_for_echo_then_gives_up(history, gui):
-    CommandLineCapture(history, _Core, gui.widgets).install()
-    gui.prompt.emit("myReturnPressed(QString)", "model solve")
+def test_line_the_engine_has_not_run_is_recorded_queued_then_ran(history, gui):
+    """Typed while a script's `model cycle` runs: the engine runs it when that ends."""
+    hook = CommandLineCapture(history, _Core, gui.widgets)
+    hook.install()
+    gui.prompt.emit("myReturnPressed(QString)", "ball list")
+    _settle_timer().fire()
 
-    timer = _settle_timer()
-    fired = 0
-    while len(history) == 0 and fired < 200:
-        assert timer.running
-        timer.fire()
-        fired += 1
-    assert fired * capture_module.OUTPUT_SETTLE_MS >= capture_module.OUTPUT_ECHO_WAIT_MS
-    # Recorded after the wait, with no output claimed.
+    # Recorded at once, as queued, with no output claimed; still pending.
+    entries = history.consume()["entries"]
+    assert [(e["input"], e["output"], e["status"]) for e in entries] == [("ball list", "", "queued")]
+    assert len(hook._pending) == 1
+    # No polling while the engine is busy: the pane's next change re-arms the timer.
+    assert not _settle_timer().running
+
+    _append_output(gui, "--- Cycling ended at: 21:43:54\n")
+    assert _settle_timer().running
+    _settle_timer().fire()
+    assert history.consume()["entries"] == []  # queued once, not again
+
+    _append_output(gui, "pfc3d>ball list\n  Ball  Radius\n")
+    _settle_timer().fire()
+    entries = history.consume()["entries"]
+    assert [(e["input"], e["output"], e["status"]) for e in entries] == [("ball list", "  Ball  Radius", "ran")]
+    assert hook._pending == []
+
+
+def test_line_that_ran_at_once_carries_no_status(history, gui):
+    CommandLineCapture(history, _Core, gui.widgets).install()
+    gui.prompt.emit("myReturnPressed(QString)", "fish list")
+    _append_output(gui, "pfc3d>fish list\nlisted\n")
+    _settle_timer().fire()
     entry = history.consume()["entries"][0]
-    assert entry["input"] == "model solve"
-    assert entry["output"] == ""
+    assert entry["output"] == "listed"
+    assert "status" not in entry
+
+
+def test_queued_line_the_engine_dropped_is_let_go(history, gui):
+    """An interrupt flushes the engine's input queue: the line never echoes.
+
+    A later line that does echo proves it, and must not be held up.
+    """
+    hook = CommandLineCapture(history, _Core, gui.widgets)
+    hook.install()
+    gui.prompt.emit("myReturnPressed(QString)", "ball list")
+    _settle_timer().fire()
+    assert [e["status"] for e in history.consume()["entries"]] == ["queued"]
+
+    # ... interrupt; the person types again once the engine is idle.
+    gui.prompt.emit("myReturnPressed(QString)", "wall list")
+    _append_output(gui, "pfc3d>wall list\nwalls\n")
+    _settle_timer().fire()
+
+    entries = history.consume()["entries"]
+    assert [(e["input"], e["output"]) for e in entries] == [("wall list", "walls")]
+    assert "status" not in entries[0]
+    assert hook._pending == []
+
+
+def test_queued_line_is_let_go_once_the_engine_is_idle_without_it(history, gui):
+    """After an interrupt the engine is idle and the line never echoed: gone."""
+    busy = [True]
+    hook = CommandLineCapture(history, _Core, gui.widgets, engine_busy=lambda: busy[0])
+    hook.install()
+    gui.prompt.emit("myReturnPressed(QString)", "ball list")
+    _settle_timer().fire()
+    assert [e["status"] for e in history.consume()["entries"]] == ["queued"]
+
+    # Still cycling: the pane moves, the line stays pending.
+    _append_output(gui, "   1000  cycles\n")
+    _settle_timer().fire()
+    assert len(hook._pending) == 1
+
+    busy[0] = False
+    _append_output(gui, "--- Cycling ended at: 22:14:18\n")
+    _settle_timer().fire()
+    assert hook._pending == []
+    assert history.consume()["entries"] == []
+
+
+def test_repeat_of_a_dropped_line_is_not_matched_to_the_dropped_ones_echo(history, gui):
+    """The dropped 'ball list' must not claim the echo of a fresh 'ball list'."""
+    busy = [True]
+    hook = CommandLineCapture(history, _Core, gui.widgets, engine_busy=lambda: busy[0])
+    hook.install()
+    gui.prompt.emit("myReturnPressed(QString)", "ball list")
+    gui.prompt.emit("myReturnPressed(QString)", "foo bar")
+    _settle_timer().fire()
+    assert [e["status"] for e in history.consume()["entries"]] == ["queued", "queued"]
+
+    busy[0] = False  # interrupted; both lines flushed by the engine
+    _append_output(gui, "--- Cycling ended at: 22:14:18\npfc3d>program log off\n")
+    _settle_timer().fire()
+    assert hook._pending == []
+
+    gui.prompt.emit("myReturnPressed(QString)", "ball list")
+    _append_output(gui, "pfc3d>ball list\n  Ball  Radius\n")
+    _settle_timer().fire()
+    entries = history.consume()["entries"]
+    assert [(e["input"], e["output"], e.get("status")) for e in entries] == [("ball list", "  Ball  Radius", None)]
+
+
+def test_a_recorded_echo_moves_every_later_line_past_it(history, gui):
+    """x, y, x entered in a row: the third must not be matched to the first echo."""
+    hook = CommandLineCapture(history, _Core, gui.widgets, engine_busy=lambda: True)
+    hook.install()
+    for line in ("x", "y", "x"):
+        gui.prompt.emit("myReturnPressed(QString)", line)
+    _append_output(gui, "pfc3d>x\nfirst\n")
+    _settle_timer().fire()
+    entries = history.consume()["entries"]
+    assert [(e["input"], e["output"], e.get("status")) for e in entries] == [
+        ("x", "first", None), ("y", "", "queued"), ("x", "", "queued"),
+    ]
+    assert [p["command"] for p in hook._pending] == ["y", "x"]
+
+    _append_output(gui, "pfc3d>y\nsecond\npfc3d>x\nthird\n")
+    _settle_timer().fire()
+    entries = history.consume()["entries"]
+    assert [(e["input"], e["output"], e["status"]) for e in entries] == [("y", "second", "ran"), ("x", "third", "ran")]
+
+
+def test_line_without_an_output_pane_is_recorded_at_once(history):
+    prompt_box = _Widget(["itasca3d::Prompt", "QWidget", "QObject"])
+    _Widget(["QLabel", "QFrame", "QWidget", "QObject"], parent=prompt_box, text="pfc3d>")
+    prompt = _Widget(["itasca3d::PromptLineEdit", "QLineEdit", "QWidget", "QObject"], parent=prompt_box, text="")
+    hook = CommandLineCapture(history, _Core, _Widgets([prompt_box, prompt]))
+    hook.install()
+    prompt.emit("myReturnPressed(QString)", "fish list")
+    entry = history.consume()["entries"][0]
+    assert (entry["input"], entry["output"]) == ("fish list", "")
+    assert "status" not in entry
+    assert hook._pending == []
+
+
+def test_engine_busy_is_assumed_when_nothing_can_be_read(history, gui):
+    """No itasca module and a plain label: a queued line waits for proof."""
+    hook = CommandLineCapture(history, _Core, gui.widgets)
+    hook.install()
+    assert hook._engine_busy() is True
+    gui.label.setProperty("text", "BUSY>")
+    assert hook._engine_busy() is True
 
 
 def test_next_command_closes_the_previous_one(history, gui):
@@ -441,17 +584,19 @@ def test_lines_entered_before_either_ran_are_both_recorded(history, gui):
     gui.prompt.emit("myReturnPressed(QString)", "fish list")
     gui.prompt.emit("myReturnPressed(QString)", "ball list")
     _settle_timer().fire()
-    assert history.consume()["entries"] == []  # still waiting for the first echo
+    # Neither has echoed: both are reported as queued, in order.
+    entries = history.consume()["entries"]
+    assert [(e["input"], e["status"]) for e in entries] == [("fish list", "queued"), ("ball list", "queued")]
 
     _append_output(gui, "pfc3d>fish list\nfirst\n")
     _settle_timer().fire()
     entries = history.consume()["entries"]
-    assert [(e["input"], e["output"]) for e in entries] == [("fish list", "first")]
+    assert [(e["input"], e["output"], e["status"]) for e in entries] == [("fish list", "first", "ran")]
 
     _append_output(gui, "pfc3d>ball list\nsecond\n")
     _settle_timer().fire()
     entries = history.consume()["entries"]
-    assert [(e["input"], e["output"]) for e in entries] == [("ball list", "second")]
+    assert [(e["input"], e["output"], e["status"]) for e in entries] == [("ball list", "second", "ran")]
 
 
 def test_repeated_command_does_not_claim_the_earlier_echo(history, gui):
@@ -460,11 +605,13 @@ def test_repeated_command_does_not_claim_the_earlier_echo(history, gui):
     gui.prompt.emit("myReturnPressed(QString)", "fish list")
     _append_output(gui, "pfc3d>fish list\nfirst\n")
     _settle_timer().fire()
-    assert [e["output"] for e in history.consume()["entries"]] == ["first"]
+    entries = history.consume()["entries"]
+    assert [(e["output"], e.get("status")) for e in entries] == [("first", None), ("", "queued")]
 
     _append_output(gui, "pfc3d>fish list\nsecond\n")
     _settle_timer().fire()
-    assert [e["output"] for e in history.consume()["entries"]] == ["second"]
+    entries = history.consume()["entries"]
+    assert [(e["output"], e.get("status")) for e in entries] == [("second", "ran")]
 
 
 def test_command_capture_flags_engine_error(history, gui):
@@ -552,3 +699,4 @@ def test_command_capture_uninstall_disconnects(history, gui):
     hook.uninstall()
     assert gui.prompt.signals["myReturnPressed(QString)"] == []
     assert gui.output.signals["textChanged()"] == []
+    assert hook._prompt_parent is None
