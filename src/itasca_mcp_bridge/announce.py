@@ -115,6 +115,11 @@ ANNOUNCEMENTS = {
         "6.0/7.0 products: the prompt label is read correctly again after the "
         "first line you enter.",
     ),
+    "0.6.2": (
+        "6.0/7.0 products: starting the bridge a second time in the same session "
+        "(start(port=...) after a port-in-use error, say) no longer closes the "
+        "product; 0.6.1 could.",
+    ),
 }
 
 
