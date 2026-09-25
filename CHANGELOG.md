@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-09-25
+
 ### Changed
 - A command line typed while the engine is busy (a `model cycle` or
   `model solve` issued by a script, say) is now recorded as soon as the

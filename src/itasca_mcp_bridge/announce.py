@@ -107,6 +107,14 @@ ANNOUNCEMENTS = {
         "Needs the matching itasca-mcp release on the agent side; older ones "
         "simply do not ask.",
     ),
+    "0.6.1": (
+        "A command you type at the prompt while the agent's task is cycling "
+        "reaches the agent right away, marked as queued; its output follows "
+        "once the engine runs it, which is when the current command ends "
+        "(a stop or an error discards it instead).",
+        "6.0/7.0 products: the prompt label is read correctly again after the "
+        "first line you enter.",
+    ),
 }
 
 
