@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-09-26
+
 ### Fixed
 - Calling `start()` a second time in the same GUI session no longer takes
   the 6.0/7.0 products down. Replacing the console hooks disconnected the
