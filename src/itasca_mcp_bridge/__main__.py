@@ -1,4 +1,5 @@
-"""Allow running as: python -m itasca_mcp_bridge"""
+"""Command-line entry point: `python -m itasca_mcp_bridge`, or the
+`itasca-mcp-bridge` console script that pip generates from pyproject."""
 
 import argparse
 
@@ -24,4 +25,5 @@ def main():
     start(host=args.host, port=args.port, mode=args.mode, auto_upgrade=not args.no_upgrade)
 
 
-main()
+if __name__ == "__main__":
+    main()

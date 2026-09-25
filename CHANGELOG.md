@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Importing `itasca_mcp_bridge.__main__` no longer starts the bridge. The
+  `itasca-mcp-bridge` console script imports that module to reach `main`,
+  so the bare module-level call started the server during the import and
+  the wrapper's own call then hit the port it already owned. The call now
+  sits under an `if __name__ == "__main__"` guard.
+
 ## [0.6.0] - 2026-09-23
 
 ### Added
