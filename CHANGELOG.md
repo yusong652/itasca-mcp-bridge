@@ -6,6 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Calling `start()` a second time in the same GUI session no longer takes
+  the 6.0/7.0 products down. Replacing the console hooks disconnected the
+  prompt widget's signal through PySide2 5.11's old-style
+  `QObject.disconnect`, which crashes the process once the widget's
+  wrapper is live (which 0.6.1 made it). The previous hook's slots are now
+  switched off and left connected instead.
+- A command line recorded as `queued` is looked for again on a timer
+  while it is pending, not only when the output pane signals a change, so
+  a missed signal cannot leave it without its `ran` entry. A queued line
+  is let go as dropped only after the engine has been seen idle at two
+  settles in a row without its echo: the pane is written asynchronously,
+  and one idle look can come before the echo of a line that has just run.
+  Both let-go cases are logged.
+
 ## [0.6.1] - 2026-09-25
 
 ### Changed

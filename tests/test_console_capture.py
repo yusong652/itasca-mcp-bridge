@@ -434,13 +434,14 @@ def test_line_the_engine_has_not_run_is_recorded_queued_then_ran(history, gui):
     entries = history.consume()["entries"]
     assert [(e["input"], e["output"], e["status"]) for e in entries] == [("ball list", "", "queued")]
     assert len(hook._pending) == 1
-    # No polling while the engine is busy: the pane's next change re-arms the timer.
-    assert not _settle_timer().running
+    # The timer keeps looking while a line is pending, whether or not the
+    # pane's change signal arrives.
+    assert _settle_timer().running
 
     _append_output(gui, "--- Cycling ended at: 21:43:54\n")
-    assert _settle_timer().running
     _settle_timer().fire()
     assert history.consume()["entries"] == []  # queued once, not again
+    assert _settle_timer().running
 
     _append_output(gui, "pfc3d>ball list\n  Ball  Radius\n")
     _settle_timer().fire()
@@ -498,8 +499,31 @@ def test_queued_line_is_let_go_once_the_engine_is_idle_without_it(history, gui):
     busy[0] = False
     _append_output(gui, "--- Cycling ended at: 22:14:18\n")
     _settle_timer().fire()
+    # One idle look is not proof: the pane is written asynchronously.
+    assert len(hook._pending) == 1
+    _settle_timer().fire()
     assert hook._pending == []
     assert history.consume()["entries"] == []
+
+
+def test_one_idle_look_before_the_echo_lands_does_not_drop_the_line(history, gui):
+    """The line ran at the command boundary; its echo reaches the pane a
+    moment after the engine reports idle."""
+    busy = [True]
+    hook = CommandLineCapture(history, _Core, gui.widgets, engine_busy=lambda: busy[0])
+    hook.install()
+    gui.prompt.emit("myReturnPressed(QString)", "ball list")
+    _settle_timer().fire()
+    assert [e["status"] for e in history.consume()["entries"]] == ["queued"]
+
+    busy[0] = False
+    _settle_timer().fire()  # idle, echo not there yet
+    assert len(hook._pending) == 1
+    _append_output(gui, "pfc3d>ball list\n  Ball  Radius\n")
+    _settle_timer().fire()
+    entries = history.consume()["entries"]
+    assert [(e["output"], e["status"]) for e in entries] == [("  Ball  Radius", "ran")]
+    assert hook._pending == []
 
 
 def test_repeat_of_a_dropped_line_is_not_matched_to_the_dropped_ones_echo(history, gui):
@@ -514,6 +538,7 @@ def test_repeat_of_a_dropped_line_is_not_matched_to_the_dropped_ones_echo(histor
 
     busy[0] = False  # interrupted; both lines flushed by the engine
     _append_output(gui, "--- Cycling ended at: 22:14:18\npfc3d>program log off\n")
+    _settle_timer().fire()
     _settle_timer().fire()
     assert hook._pending == []
 
@@ -693,10 +718,32 @@ def test_command_capture_gives_up_after_retries(history):
     assert hook._prompt_widget is None
 
 
-def test_command_capture_uninstall_disconnects(history, gui):
+def test_command_capture_uninstall_switches_the_hook_off_without_disconnecting(history, gui):
+    """QObject.disconnect on PySide2 5.11 crashed the 7.0 product; the slots
+    stay connected and ignore what comes through."""
     hook = CommandLineCapture(history, _Core, gui.widgets)
     hook.install()
     hook.uninstall()
-    assert gui.prompt.signals["myReturnPressed(QString)"] == []
-    assert gui.output.signals["textChanged()"] == []
+    assert len(gui.prompt.signals["myReturnPressed(QString)"]) == 1
+    assert len(gui.output.signals["textChanged()"]) == 1
     assert hook._prompt_parent is None
+
+    gui.prompt.emit("myReturnPressed(QString)", "fish list")
+    assert hook._pending == []
+    _append_output(gui, "pfc3d>fish list\nlisted\n")
+    assert not _settle_timer().running
+    assert len(history) == 0
+
+
+def test_second_install_records_once(history, gui):
+    """start() twice in one session: only the new hook records."""
+    first = CommandLineCapture(history, _Core, gui.widgets)
+    first.install()
+    first.uninstall()
+    second = CommandLineCapture(history, _Core, gui.widgets)
+    second.install()
+    gui.prompt.emit("myReturnPressed(QString)", "fish list")
+    _append_output(gui, "pfc3d>fish list\nlisted\n")
+    for timer in [t for t in _Timer.instances if t.single and t.running]:
+        timer.fire()
+    assert [e["input"] for e in history.consume()["entries"]] == ["fish list"]
