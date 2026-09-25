@@ -37,8 +37,8 @@ Native command prompt
     recorded at once with ``status="queued"``, so the client learns what
     was typed without waiting, and recorded again with its output, as
     ``status="ran"``, when the echo finally arrives. A queued line still
-    without its echo once the engine is idle again was flushed: it is let
-    go, so that a later line with the same text is not matched to the
+    without its echo once the engine has stayed idle was flushed: it is
+    let go, so that a later line with the same text is not matched to the
     wrong echo. Whether the engine is busy is read from the product's own
     ``itasca._cycling()`` (the prompt label keeps reading ``pfc3d>`` while
     a script cycles; it only says ``BUSY>`` for what the GUI itself runs).
@@ -80,8 +80,15 @@ PROMPT_SIGNAL = "myReturnPressed(QString)"
 
 # A command's output is closed once the output pane has been quiet this
 # long after the last change. A line whose echo has not appeared by then
-# is queued in the engine and is recorded as such.
+# is queued in the engine and is recorded as such; while anything is
+# pending the pane is looked at again at this interval regardless of its
+# change signal, so a missed signal cannot strand a line.
 OUTPUT_SETTLE_MS = 300
+# A queued line is let go as dropped only after the engine has been seen
+# idle this many settles in a row without its echo: the pane is written
+# asynchronously, so one idle look can precede the echo of a line that
+# has in fact just run.
+IDLE_SETTLES_TO_DROP = 2
 
 # Entry status for a line the engine had not run when it was recorded,
 # and for the follow-up entry that carries its output once it has run.
@@ -362,11 +369,16 @@ class CommandLineCapture(object):
         # More than one when lines are entered faster than the engine runs
         # them; each carries whether it has been recorded as queued.
         self._pending = []  # type: list
+        # Settles in a row at which the engine was idle and the oldest
+        # pending line still had no echo.
+        self._idle_settles = 0
         self._settle_timer = None
         self._find_timer = None
         self._find_attempts = 0
         self._event_filter = None
-        self._connected = []  # (obj, signal, fn) pairs for uninstall
+        self._connected = []  # (obj, signal, fn) pairs, for the record
+        # Cleared by uninstall(): the slots stay connected but do nothing.
+        self._active = True
 
     # -- install -------------------------------------------------------------
 
@@ -446,11 +458,16 @@ class CommandLineCapture(object):
         return True
 
     def uninstall(self):
-        for obj, signature, fn in self._connected:
-            try:
-                self._core.QObject.disconnect(obj, self._core.SIGNAL(signature), fn)
-            except Exception:
-                pass
+        """Stop recording. The old-style connections are left in place.
+
+        ``QObject.disconnect(obj, SIGNAL(...), fn)`` on PySide2 5.11 took
+        the 7.0 product down twice (2026-09-25/26, engine idle the second
+        time) when the prompt widget's wrapper was live; a second
+        ``start()`` in the same session goes through here, so the slots are
+        switched off instead and the widgets keep a connection to a hook
+        that does nothing.
+        """
+        self._active = False
         self._connected = []
         if self._event_filter is not None and self._prompt_widget is not None:
             try:
@@ -484,6 +501,8 @@ class CommandLineCapture(object):
         return text if isinstance(text, str) else ""
 
     def _on_return_pressed(self, text):
+        if not self._active:
+            return
         try:
             command = str(text).strip()
         except Exception:
@@ -503,10 +522,11 @@ class CommandLineCapture(object):
             "offset": len(self._output_text()),
             "queued": False,
         })
+        self._idle_settles = 0
         self._restart_settle_timer()
 
     def _on_output_changed(self):
-        if self._pending:
+        if self._active and self._pending:
             self._restart_settle_timer()
 
     def _restart_settle_timer(self):
@@ -526,11 +546,10 @@ class CommandLineCapture(object):
         engine and holds up the ones behind it, which cannot have run
         before it. It was dropped instead (an error or an interrupt
         flushes the engine's queue) when a later line has run, or when the
-        engine is idle and still has not run it; a dropped line is let go,
-        its queued entry standing as the record. Whatever is still pending
-        afterwards is recorded as queued, once, so the client sees the line
-        now and its output later. The pane's next change brings the timer
-        back.
+        engine has stayed idle without running it; a dropped line is let
+        go, its queued entry standing as the record. Whatever is still
+        pending afterwards is recorded as queued, once, so the client sees
+        the line now and its output later, and the timer keeps looking.
         """
         text = self._output_text()
         while self._pending:
@@ -540,6 +559,7 @@ class CommandLineCapture(object):
             )
             if found:
                 self._pending.pop(0)
+                self._idle_settles = 0
                 # Every later line's echo comes after this one's output; a
                 # repeat of the same command must not claim this echo again.
                 for item in self._pending:
@@ -547,14 +567,28 @@ class CommandLineCapture(object):
                         item["offset"] = end
                 self._record(head["command"], output, STATUS_RAN if head["queued"] else None)
                 continue
-            dropped = self._later_line_ran(text) or (head["queued"] and not self._engine_busy())
-            if not dropped:
-                break
-            self._pending.pop(0)
+            if self._later_line_ran(text):
+                logger.info("Console capture: %r never ran (a later line has); let go", head["command"])
+                self._pending.pop(0)
+                continue
+            if head["queued"] and not self._engine_busy():
+                # An idle engine runs its queue within milliseconds; lines
+                # still without an echo after two idle looks were flushed,
+                # all of them (the queue is flushed as a whole).
+                self._idle_settles += 1
+                if self._idle_settles >= IDLE_SETTLES_TO_DROP:
+                    for item in self._pending:
+                        logger.info("Console capture: %r never ran (engine idle); let go", item["command"])
+                    del self._pending[:]
+            else:
+                self._idle_settles = 0
+            break
         for item in self._pending:
             if not item["queued"]:
                 item["queued"] = True
                 self._record(item["command"], "", STATUS_QUEUED)
+        if self._pending:
+            self._restart_settle_timer()
 
     def _read_engine_busy(self):
         # type: () -> bool
