@@ -34,6 +34,11 @@ DEFAULT_MAX_ENTRIES = 500
 # "command" is a line entered at the product's own command prompt.
 SOURCE_PYTHON = "python"
 SOURCE_COMMAND = "command"
+# Not typed, but done in the GUI all the same (see ``console.views``):
+# "view" is a plot or data file opened, closed or brought to the front;
+# "plot_item" is an item added to, removed from or changed in a plot.
+SOURCE_VIEW = "view"
+SOURCE_PLOT_ITEM = "plot_item"
 
 
 class ConsoleHistory:
@@ -69,8 +74,9 @@ class ConsoleHistory:
 
     # -- writing -------------------------------------------------------------
 
-    def add(self, source, input_text, output="", result=None, success=True, status=None):
-        # type: (str, str, str, object, bool, str) -> dict
+    def add(self, source, input_text, output="", result=None, success=True, status=None,
+            data=None):
+        # type: (str, str, str, object, bool, str, dict) -> dict
         """Record one entry and return it.
 
         ``source`` is ``"python"`` or ``"command"``; ``input_text`` is what
@@ -82,6 +88,11 @@ class ConsoleHistory:
         ``status`` is set on a command line the engine had not run when it
         was recorded (``"queued"``) and on the later entry that carries its
         output (``"ran"``); an entry without it ran when it was typed.
+
+        ``data`` carries the structured fields of a GUI entry (``"view"`` /
+        ``"plot_item"``), whose ``input_text`` is only the name of the plot
+        or file, so a client that predates those sources still shows
+        something readable.
         """
         entry = {
             "id": None,
@@ -94,6 +105,8 @@ class ConsoleHistory:
         }
         if status is not None:
             entry["status"] = status
+        if data is not None:
+            entry["data"] = data
         with self._lock:
             entry["id"] = self._next_id
             self._next_id += 1
