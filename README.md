@@ -28,6 +28,9 @@ command language / Python SDK rather than any product-specific API.
   cells in the IPython pane and lines at the command prompt — is recorded
   with its output and handed to the client on request (`console_history`),
   so an agent sees what happened in the GUI between its own calls.
+- **GUI activity.** The plots and data files the person opens, closes or
+  switches to, the items added to a plot, and the data files executed
+  from the editor are recorded alongside, by name.
 
 ## Architecture
 
@@ -77,7 +80,7 @@ body is a JSON object carrying a `request_id`; the JSON response echoes the
 | `list_tasks` | List known tasks | `offset`, `limit` |
 | `interrupt_task` | Request a graceful interrupt of a running task | `task_id` |
 | `execute_code` | Run a snippet in the running task's `__main__` (sync REPL) | `code`, `timeout_ms` |
-| `console_history` | Read what the person typed in the GUI since the last call | `limit` |
+| `console_history` | Read what the person typed and did in the GUI since the last call | `limit` |
 
 ## Quick Start
 

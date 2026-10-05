@@ -6,6 +6,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-10-05
+
+### Added
+- What the person does in the product GUI besides typing is recorded in
+  the console history, for the client to read with `console_history`:
+  - `view` entries when a plot or a data file is opened, closed, renamed
+    or brought to the front, by the person or by the bridge's own code;
+  - `plot_item` entries when items are added to, removed from or changed
+    in a plot, with the plot's items after the change;
+  - a `view` entry with event `executed` when the person runs a data file
+    from its editor: the Execute button, Ctrl+E, or Ctrl+M for the
+    project's master files. Only that it was run is recorded, never what
+    it printed.
+
+  Names only: the client reads a data file from the working directory and
+  sees a plot by exporting it. Measured on PFC 7.0 (PySide2 5.11) and 9.7
+  (PySide6).
+
+### Fixed
+- A modal dialog the bridge leaves for the person (anything but the
+  one-button error box) is reported in the log once, not on every poll
+  while it stays open. The report was deduplicated on `id()` of a wrapper
+  the binding replaces each tick; one dialog wrote 46 lines in 36 s. It is
+  now recognised by what it says, and the warning carries the first line
+  of its message.
+
 ## [0.6.2] - 2026-09-26
 
 ### Fixed
