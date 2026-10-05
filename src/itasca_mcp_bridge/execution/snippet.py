@@ -88,6 +88,10 @@ def run_snippet(code, output_buffer, request_id=None, ensure_callbacks=True):
     if ensure_callbacks:
         ensure_cycle_callbacks()
 
+    # Plots this snippet opens reach the client's next read (see
+    # console.views); never raises.
+    from ..console.views import after_bridge_code
+
     old_stdout = sys.stdout
     terminal = sys.__stdout__ if sys.__stdout__ is not None else old_stdout
     sys.stdout = TeeBuffer(terminal, output_buffer)
@@ -206,6 +210,7 @@ def run_snippet(code, output_buffer, request_id=None, ensure_callbacks=True):
         }
     finally:
         sys.stdout = old_stdout
+        after_bridge_code()
         if request_id is not None:
             # Restore the outer task's current_task_id (or clear if no
             # outer task). Must NOT unconditionally clear: see comment

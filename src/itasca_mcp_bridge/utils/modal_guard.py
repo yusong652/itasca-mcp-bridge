@@ -46,6 +46,7 @@ Python 3.6 compatible implementation.
 """
 
 import logging
+import time
 from typing import Any, List, Optional, Tuple
 
 logger = logging.getLogger("itasca-mcp-bridge")
@@ -69,9 +70,18 @@ _qt_widgets = None  # type: Any
 # main thread, so a plain counter is enough.
 _depth = 0
 
-# ids of modal widgets already reported as left alone, so a dialog that
-# sits there does not write a log line every tick.
+# Modal dialogs already reported as left alone, so a dialog that sits there
+# does not write a log line every tick. Keyed by what the dialog says, not
+# by ``id()`` of its wrapper: the binding hands back a new wrapper on every
+# tick, whose id is new some of the time (46 lines in 36s for one dialog,
+# measured on PFC3D 6.00.030).
 _reported = set()
+
+# A dialog is forgotten only after no modal widget has been seen for this
+# long, so one that drops out of ``activeModalWidget()`` for a tick or two
+# is not reported afresh.
+FORGET_AFTER_S = 2.0
+_last_seen = 0.0
 
 
 def entered():
@@ -147,21 +157,28 @@ def _report_once(widget, buttons):
     the log has to carry enough to recognise it on screen and to know
     which button a person would have to press.
     """
-    key = id(widget)
-    if key in _reported:
-        return
-    _reported.add(key)
+    global _last_seen
+    _last_seen = time.time()
     labels = []
     if buttons:
         for button in buttons:
             try:
-                labels.append(button.text())
+                labels.append(str(button.text()))
             except Exception:
                 pass
+    description = _describe(widget)
+    try:
+        message = _first_line(widget.property("text"))
+    except Exception:
+        message = ""
+    key = (description, message, tuple(labels))
+    if key in _reported:
+        return
+    _reported.add(key)
     logger.warning(
         "Blocked on a modal dialog raised during an engine command; it needs a "
-        "person, the bridge will not answer it: %s buttons=%s",
-        _describe(widget), labels,
+        "person, the bridge will not answer it: %s %r buttons=%s",
+        description, message, labels,
     )
 
 
@@ -175,7 +192,7 @@ def _tick():
     except Exception:
         return
     if widget is None:
-        if _reported:
+        if _reported and time.time() - _last_seen > FORGET_AFTER_S:
             _reported.clear()
         return
 

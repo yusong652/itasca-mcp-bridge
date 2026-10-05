@@ -438,6 +438,13 @@ def start(
             logger.info("Console capture: %s", installed)
         except Exception as e:
             logger.warning("Console capture not installed: {}".format(e))
+        # Which plots and data files the person has open, into the same
+        # history. Same terms as the capture: GUI only, never fails the start.
+        from .console import install_view_tracking
+        try:
+            logger.info("View tracking: %s", install_view_tracking(itasca_server.context.console_history))
+        except Exception as e:
+            logger.warning("View tracking not installed: {}".format(e))
     elif mode == "gui":
         # Raise before the banner: a failed start should not print one.
         raise RuntimeError(

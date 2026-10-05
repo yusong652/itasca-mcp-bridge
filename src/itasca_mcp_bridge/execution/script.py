@@ -86,6 +86,10 @@ class ScriptRunner:
         # empty and the script's first `model cycle` wedges the bridge.
         ensure_cycle_callbacks()
 
+        # Plots the script opens reach the client's next read (see
+        # console.views); never raises.
+        from ..console.views import after_bridge_code
+
         # Use TeeBuffer so output goes to both terminal and capture buffer
         old_stdout = sys.stdout
         terminal = sys.__stdout__ if sys.__stdout__ is not None else old_stdout
@@ -260,6 +264,7 @@ class ScriptRunner:
         finally:
             # Always restore stdout
             sys.stdout = old_stdout
+            after_bridge_code()
             # Clear current task and interrupt flag
             clear_current_task()
             clear_interrupt(task_id)
