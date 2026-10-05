@@ -93,6 +93,14 @@ class _Widget:
     def parentWidget(self):
         return self._parent
 
+    def isAncestorOf(self, other):
+        current = other._parent
+        while current is not None:
+            if current is self:
+                return True
+            current = current._parent
+        return False
+
     def windowTitle(self):
         return self.title
 
@@ -386,6 +394,100 @@ def test_lists_without_model_access_leave_views_working(gui, history):
         ("view", "Plot01", {"kind": "plot", "event": "open"}),
         ("view", "Plot02", {"kind": "plot", "event": "open"}),
         ("view", "Plot02", {"kind": "plot", "event": "active"}),
+    ]
+
+
+class _RowModel(_Model):
+    """A tree's model read by row, as PySide2 5.11 leaves no other way."""
+
+    def __init__(self, items):
+        super().__init__()
+        self.items = items
+
+    def rowCount(self):
+        return len(self.items)
+
+    def index(self, row, column):
+        return row
+
+    def data(self, index):
+        return self.items[index] + " "
+
+
+class _GenericItemList(_Widget):
+    """An item list wrapped as a plain QWidget: no model(), no topLevelItem()."""
+
+    def __init__(self, items, parent=None, visible=False):
+        super().__init__("itasca3d::PlotItemWidget", parent=parent, visible=visible)
+        self.items = list(items)
+        self._model = _RowModel(self.items)
+
+    def findChildren(self, cls):
+        return [self._model]
+
+
+def test_list_inside_a_plots_dock_is_that_plots_and_is_read_from_its_model(gui, history):
+    gui.core.QAbstractItemModel = object
+    plot1 = gui.view("plot", "Plot01")
+    plot2 = gui.view("plot", "Plot02")
+    own1 = _GenericItemList(["Ball", "Legend"], parent=plot1.page)
+    own2 = _GenericItemList(["Legend"], parent=plot2.page)
+    # The Control Panel's copies; the one on screen is not the focused plot's.
+    panel1 = _GenericItemList(["Ball", "Legend"], visible=True)
+    panel2 = _GenericItemList(["Legend"])
+    gui.widgets += [own1, own2, panel1, panel2]
+    _install(gui, history)
+    gui.focus_on(plot2.body)
+    _entries(history)
+
+    for item_list in (own2, panel2):
+        item_list.items.insert(0, "Wall")
+        item_list._model.rowsInserted.emit()
+    _Timer.flush()
+
+    assert _entries(history) == [
+        ("plot_item", "Plot02", {"items": ["Wall", "Legend"], "added": ["Wall"]}),
+    ]
+
+
+def test_a_list_turning_up_in_the_dock_later_does_not_double_the_report(gui, history):
+    gui.core.QAbstractItemModel = object
+    plot = gui.view("plot", "Plot01")
+    own = _GenericItemList(["Legend"])  # not in the dock yet
+    panel = _GenericItemList(["Legend"], visible=True)
+    gui.widgets += [own, panel]
+    _install(gui, history)  # the Control Panel's copy is paired
+    _entries(history)
+
+    own._parent = plot.page
+    for name in ("Ball", "Wall"):
+        for item_list in (own, panel):
+            item_list.items.insert(0, name)
+            item_list._model.rowsInserted.emit()
+        _Timer.flush()
+
+    assert _entries(history) == [
+        ("plot_item", "Plot01", {"items": ["Ball", "Legend"], "added": ["Ball"]}),
+        ("plot_item", "Plot01", {"items": ["Wall", "Ball", "Legend"], "added": ["Wall"]}),
+    ]
+
+
+def test_a_replaced_dock_wrapper_is_the_same_view(gui, history):
+    plot = gui.view("plot", "Plot01")
+    item_list = gui.item_list(["Ball", "Legend"], visible=True)
+    _install(gui, history)
+    _entries(history)
+
+    # The binding hands out a new wrapper for the same dock.
+    again = _Widget("itascaxd::ItascaDockWidget", title="Plot01")
+    gui.widgets[gui.widgets.index(plot.dock)] = again
+    plot.page._parent = again
+    gui.focus_on(plot.body)
+    item_list.add("Wall")
+    _Timer.flush()
+
+    assert _entries(history) == [
+        ("plot_item", "Plot01", {"items": ["Ball", "Wall", "Legend"], "added": ["Wall"]}),
     ]
 
 

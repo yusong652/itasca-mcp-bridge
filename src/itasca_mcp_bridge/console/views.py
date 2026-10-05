@@ -39,6 +39,18 @@ Where things are (measured on the 9.x products)
     a plot when it is the one visible while that plot is the current view
     and neither has a partner yet; once attached it stays.
 
+Where things are on 6.0/7.0 (measured on PFC 7.0, PySide2 5.11)
+    Same docks and pages, but the x on a view's tab destroys its dock: the
+    view is reported closed. Each plot's dock also holds an item list of its
+    own, never shown, that mirrors the one in the Control Panel; a list
+    inside a plot's dock is that plot's, with nothing to guess. It is put
+    there late -- a plot open when the product starts has it outside every
+    dock until the person has worked with the plot -- so the Control Panel's
+    copy may be paired first, as on 9.x; a plot keeps one list. The binding
+    wraps the lists as plain ``QWidget``, without the tree's methods, so
+    the items are read from the tree's model, which is a child object of
+    the list.
+
 Which view is current
     The view holding the focus widget, when there is one. Otherwise the
     plot whose item list is the visible one: that keeps being true when the
@@ -66,6 +78,15 @@ Identity
     A view or list is recognised again by holding its wrapper: the binding
     hands back the same wrapper for a C++ object as long as one is alive,
     so ``is`` works. ``id()`` of a wrapper that was let go does not.
+
+    PySide2 5.11 breaks that in one case: ``child.parentWidget()`` ties the
+    child's wrapper to the parent's, and when the parent's wrapper is
+    collected the child's is declared dead ("Internal C++ object already
+    deleted") though the widget is alive; the next look gets a new wrapper
+    for it. So nothing here walks up the parent chain -- containment is
+    asked with ``isAncestorOf`` -- and when someone else's code does, a
+    view whose dock went missing while one of the same kind and name
+    turned up is the same view, not one closed and one opened.
 
 Python 3.6 compatible implementation.
 """
@@ -160,12 +181,14 @@ class _View(object):
 
 
 class _ItemList(object):
-    __slots__ = ("widget", "view", "items")
+    __slots__ = ("widget", "model", "view", "items", "embedded")
 
-    def __init__(self, widget):
+    def __init__(self, widget, model):
         self.widget = widget
+        self.model = model
         self.view = None  # the _View it belongs to, once known
         self.items = None  # the names last reported for it
+        self.embedded = False  # inside its plot's own dock (6.0/7.0)
 
 
 class ViewTracker(object):
@@ -289,17 +312,20 @@ class ViewTracker(object):
         except Exception:
             return
 
+        docks = []
         pages = []
         lists = []
         for widget in widgets:
             name = class_name(widget)
-            if name in PAGE_KINDS:
+            if name == DOCK_CLASS:
+                docks.append(widget)
+            elif name in PAGE_KINDS:
                 pages.append((widget, PAGE_KINDS[name]))
             elif name == ITEM_LIST_CLASS:
                 lists.append(widget)
 
         entries = []  # (name, data, source), recorded in this order
-        opened = self._update_views(pages, entries)
+        opened = self._update_views(docks, pages, entries)
         self._update_lists(lists)
         self._update_current(opened, entries)
         self._update_items(entries)
@@ -307,19 +333,26 @@ class ViewTracker(object):
         for name, data, source in entries:
             self._history.add(source, name, data=data)
 
-    def _update_views(self, pages, entries):
-        # type: (list, list) -> list
+    def _update_views(self, all_docks, pages, entries):
+        # type: (list, list, list) -> list
         """Track the docks holding a plot or editor page; record opens and closes."""
         docks = []
         for page, kind in pages:
-            dock = _ancestor(page, DOCK_CLASS)
+            dock = _containing(all_docks, page)
             if dock is None:
                 continue
             if not any(dock is d for d, _ in docks):
                 docks.append((dock, kind))
 
         for view in list(self._views):
-            if not any(view.dock is d for d, _ in docks):
+            if any(view.dock is d for d, _ in docks):
+                continue
+            # Its wrapper may have been replaced under us (see Identity).
+            for dock, kind in docks:
+                if kind == view.kind and view_name(dock) == view.name and self._find_view(dock) is None:
+                    view.dock = dock
+                    break
+            else:
                 self._views.remove(view)
                 for item_list in self._lists:
                     if item_list.view is view:
@@ -351,9 +384,8 @@ class ViewTracker(object):
         for widget in lists:
             if any(l.widget is widget for l in self._lists):
                 continue
-            try:
-                model = widget.model()
-            except Exception:
+            model = self._model_of(widget)
+            if model is None:
                 self._lists_readable = False
                 logger.info("Plot item lists are not readable with this Qt binding")
                 return
@@ -363,12 +395,41 @@ class ViewTracker(object):
                 except Exception:
                     pass
             self._connected.append(model)
-            self._lists.append(_ItemList(widget))
+            self._lists.append(_ItemList(widget, model))
+
+        # A list inside a plot's own dock is that plot's.
+        plot_docks = [v.dock for v in self._views if v.kind == KIND_PLOT]
+        for item_list in self._lists:
+            if item_list.view is None:
+                dock = _containing(plot_docks, item_list.widget)
+                if dock is None:
+                    continue
+                item_list.embedded = True
+                # The product builds it late (it can turn up in the dock
+                # after the Control Panel's copy was paired): one list a plot.
+                view = self._find_view(dock)
+                if not any(l.view is view for l in self._lists):
+                    item_list.view = view
+
+    def _model_of(self, widget):
+        # type: (object) -> object
+        """The item list's model, or None when the binding cannot reach it."""
+        try:
+            return widget.model()
+        except Exception:
+            pass
+        # A wrapper without the tree's methods: the model is a child object.
+        try:
+            for model in widget.findChildren(self._core.QAbstractItemModel):
+                return model
+        except Exception:
+            pass
+        return None
 
     def _update_current(self, opened, entries):
         # type: (list, list) -> None
         """Work out the current view, attach item lists, record a change."""
-        visible = [l for l in self._lists if _is_visible(l.widget)]
+        visible = [l for l in self._lists if not l.embedded and _is_visible(l.widget)]
         candidate = self._view_with_focus()
 
         # Attaching a list needs to know which plot is up. The focused view
@@ -416,7 +477,7 @@ class ViewTracker(object):
         for item_list in self._lists:
             if item_list.view is None:
                 continue
-            items = _read_items(item_list.widget)
+            items = _read_items(item_list)
             if items is None:
                 continue
             if item_list.items is None:
@@ -452,7 +513,7 @@ class ViewTracker(object):
             return None
         if focus is None:
             return None
-        dock = _ancestor(focus, DOCK_CLASS)
+        dock = _containing([v.dock for v in self._views], focus)
         return self._find_view(dock) if dock is not None else None
 
     def _items_of(self, view):
@@ -462,24 +523,26 @@ class ViewTracker(object):
             return None
         for item_list in self._lists:
             if item_list.view is view:
-                items = _read_items(item_list.widget)
+                items = _read_items(item_list)
                 if items is not None:
                     item_list.items = items
                 return items
         return None
 
 
-def _ancestor(widget, class_short_name):
-    # type: (object, str) -> object
-    """The nearest widget at or above ``widget`` of the given class, or None."""
-    current = widget
-    while current is not None:
-        if class_name(current) == class_short_name:
-            return current
+def _containing(docks, widget):
+    # type: (list, object) -> object
+    """The dock among ``docks`` that is ``widget`` or holds it, or None.
+
+    Asked of each dock rather than by walking up from the widget: see
+    Identity in the module docstring.
+    """
+    for dock in docks:
         try:
-            current = current.parentWidget()
+            if dock is widget or dock.isAncestorOf(widget):
+                return dock
         except Exception:
-            return None
+            continue
     return None
 
 
@@ -491,16 +554,23 @@ def _is_visible(widget):
         return False
 
 
-def _read_items(widget):
+def _read_items(item_list):
     # type: (object) -> list
     """Top-level item names of a plot item list, or None if unreadable.
 
     The sub-entries every item carries (cutting tool, clip box, range) say
     nothing about what the person is after and are left out.
     """
+    widget = item_list.widget
     try:
         count = widget.topLevelItemCount()
         return [str(widget.topLevelItem(i).text(0)).strip() for i in range(count)]
+    except Exception:
+        pass
+    # A wrapper without the tree's methods: the model's top-level rows.
+    model = item_list.model
+    try:
+        return [str(model.data(model.index(row, 0)) or "").strip() for row in range(model.rowCount())]
     except Exception:
         return None
 
