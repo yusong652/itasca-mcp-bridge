@@ -120,6 +120,14 @@ ANNOUNCEMENTS = {
         "(start(port=...) after a port-in-use error, say) no longer closes the "
         "product; 0.6.1 could.",
     ),
+    "0.6.3": (
+        "Your agent now also sees what you do in the GUI without typing: the "
+        "plots and data files you open, close or switch to, the items you add "
+        "to a plot, and a data file you run with the editor's Execute button "
+        "or Ctrl+E.",
+        "Needs the matching itasca-mcp release on the agent side; older ones "
+        "simply do not show it.",
+    ),
 }
 
 
