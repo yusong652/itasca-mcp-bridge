@@ -183,17 +183,32 @@ class TestWhatItWillAnswer:
         assert len(blocked) == 1
         assert "Abort" in blocked[0].getMessage()
 
-    def test_a_new_dialog_is_reported_again_after_the_first_clears(self, caplog):
+    def test_a_new_dialog_is_reported_again_after_the_first_clears(self, caplog, monkeypatch):
         modal_guard.entered()
         with caplog.at_level(logging.WARNING, logger="itasca-mcp-bridge"):
             _FakeQApplication.modal = _error_box(buttons=("Abort", "Retry"))
             modal_guard._tick()
             _FakeQApplication.modal = None
+            monkeypatch.setattr(modal_guard, "_last_seen", 0.0)  # long gone
             modal_guard._tick()
             _FakeQApplication.modal = _error_box(buttons=("Abort", "Retry"))
             modal_guard._tick()
         blocked = [r for r in caplog.records if "Blocked on a modal dialog" in r.message]
         assert len(blocked) == 2
+
+    def test_a_new_wrapper_for_the_same_dialog_is_not_reported_again(self, caplog):
+        """The binding hands back a fresh wrapper each tick, and the dialog
+        can drop out of sight for a tick; neither makes it a new dialog."""
+        modal_guard.entered()
+        with caplog.at_level(logging.WARNING, logger="itasca-mcp-bridge"):
+            for _ in range(5):
+                _FakeQApplication.modal = _error_box(buttons=("Save As...", "Discard", "Cancel"))
+                modal_guard._tick()
+                _FakeQApplication.modal = None
+                modal_guard._tick()
+        blocked = [r for r in caplog.records if "Blocked on a modal dialog" in r.message]
+        assert len(blocked) == 1
+        assert "Bad conversion" in blocked[0].getMessage()
 
     def test_dismissal_is_logged_with_title_and_message(self, caplog):
         _FakeQApplication.modal = _error_box()
