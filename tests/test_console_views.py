@@ -592,3 +592,120 @@ def test_console_hook_keeps_the_servers_doorbell(gui, tmp_path, monkeypatch):
         views_module.uninstall()
 
     assert [e["input"] for e in rung] == ["x = 1"]
+
+
+# ---------------------------------------------------------------------------
+# Executing a data file from its editor
+# ---------------------------------------------------------------------------
+
+
+class _Action:
+    def __init__(self, text):
+        self._text = text
+        self.triggered = _Signal()
+
+    def text(self):
+        return self._text
+
+
+class _ToolButton(_Widget):
+    def __init__(self, *actions):
+        super().__init__("QToolButton")
+        self._actions = list(actions)
+
+    def actions(self):
+        return list(self._actions)
+
+
+class _Shortcut:
+    def __init__(self, key):
+        self._key = key
+        self.activated = _Signal()
+
+    def key(self):
+        return SimpleNamespace(toString=lambda: self._key)
+
+
+@pytest.fixture
+def editor_gui(gui):
+    """The fake GUI with an editor toolbar: Execute, Ctrl+E, Ctrl+M."""
+    gui.execute = _Action("Execute")
+    gui.ctrl_e = _Shortcut("Ctrl+E")
+    gui.ctrl_m = _Shortcut("Ctrl+M")
+    gui.modifiers = 0
+    window = SimpleNamespace(findChildren=lambda cls: [_Shortcut("Ctrl+B"), gui.ctrl_e, gui.ctrl_m])
+    gui.widgets += [_ToolButton(_Action("Run Selection")), _ToolButton(gui.execute)]
+    gui.qt_widgets.QShortcut = _Shortcut
+    gui.qt_widgets.QApplication.topLevelWidgets = lambda: [window]
+    gui.qt_widgets.QApplication.keyboardModifiers = lambda: gui.modifiers
+    gui.core.Qt = SimpleNamespace(ControlModifier=4)
+    return gui
+
+
+def test_execute_button_and_shortcut_report_the_file_in_front(editor_gui, history):
+    gui = editor_gui
+    editor = gui.view("data_file", "script")
+    gui.view("plot", "Plot01", visible=False)
+    _install(gui, history)
+    gui.focus_on(editor.body)
+    _entries(history)
+
+    gui.execute.triggered.emit(False)
+    gui.modifiers = 4  # Ctrl is down while Ctrl+E is pressed; that is not a Ctrl-click
+    gui.ctrl_e.activated.emit()
+
+    executed =("view", "script", {"kind": "data_file", "event": "executed"})
+    assert _entries(history) == [executed, executed]
+
+
+def test_execute_after_focus_left_the_editor_still_names_the_file(editor_gui, history):
+    gui = editor_gui
+    editor = gui.view("data_file", "script")
+    _install(gui, history)
+    gui.focus_on(editor.body)
+    gui.focus_on(None)  # the click landed on the toolbar
+    _entries(history)
+
+    gui.execute.triggered.emit(False)
+
+    assert _entries(history) == [("view", "script", {"kind": "data_file", "event": "executed"})]
+
+
+def test_master_files_are_reported_without_a_name(editor_gui, history):
+    gui = editor_gui
+    editor = gui.view("data_file", "script")
+    _install(gui, history)
+    gui.focus_on(editor.body)
+    _entries(history)
+
+    gui.ctrl_m.activated.emit()
+    gui.modifiers = 4  # Ctrl held while clicking Execute
+    gui.execute.triggered.emit(False)
+
+    master = ("view", "", {"kind": "data_file", "event": "executed", "master": True})
+    assert _entries(history) == [master, master]
+
+
+def test_execute_with_a_plot_in_front_reports_nothing(editor_gui, history):
+    gui = editor_gui
+    plot = gui.view("plot", "Plot01")
+    _install(gui, history)
+    gui.focus_on(plot.body)
+    _entries(history)
+
+    gui.execute.triggered.emit(False)
+
+    assert _entries(history) == []
+
+
+def test_execute_is_not_recorded_after_uninstall(editor_gui, history):
+    gui = editor_gui
+    editor = gui.view("data_file", "script")
+    tracker = _install(gui, history)
+    gui.focus_on(editor.body)
+    _entries(history)
+
+    tracker.uninstall()
+    gui.execute.triggered.emit(False)
+
+    assert _entries(history) == []

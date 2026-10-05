@@ -6,7 +6,8 @@ in front of them, which data file they are editing, and which items they
 just added to a plot say as much about what they are after as the command
 they type next. This module reports those as entries in the same
 ``ConsoleHistory`` the typed input goes to: ``"view"`` entries when a plot
-or a data file is opened, closed, renamed or brought to the front, and
+or a data file is opened, closed, renamed or brought to the front, or a
+data file is executed from its editor, and
 ``"plot_item"`` entries when items are added to, removed from or changed
 in a plot.
 
@@ -74,6 +75,16 @@ When to look
     later, as the viewer builds some views from the event loop. Not from
     inside a cycle callback: the GUI is not read from there.
 
+Executing a data file (measured on PFC 7.0)
+    Not everyone runs a script from a console. The editor's Execute button
+    is a tool button whose action, one for the whole session, is named
+    "Execute"; Ctrl+E and Ctrl+M (the project's master files) are separate
+    ``QShortcut`` objects that do not go through that action, and a
+    Ctrl-click on the button runs the master files too. All three are
+    listened to and recorded as an ``executed`` entry naming the file in
+    front. That the person ran it is all that is recorded: what it printed
+    is not, and what it does the client reads from the file.
+
 Identity
     A view or list is recognised again by holding its wrapper: the binding
     hands back the same wrapper for a C++ object as long as one is alive,
@@ -105,6 +116,13 @@ ITEM_LIST_CLASS = "PlotItemWidget"
 
 FOCUS_SIGNAL = "focusChanged(QWidget*,QWidget*)"
 
+TOOL_BUTTON_CLASS = "QToolButton"
+EXECUTE_ACTION_TEXT = "Execute"
+EXECUTE_ACTION_SIGNAL = "triggered(bool)"
+SHORTCUT_SIGNAL = "activated()"
+EXECUTE_SHORTCUT = "Ctrl+E"
+EXECUTE_MASTER_SHORTCUT = "Ctrl+M"
+
 KIND_PLOT = "plot"
 KIND_DATA_FILE = "data_file"
 
@@ -112,6 +130,7 @@ EVENT_OPEN = "open"
 EVENT_ACTIVE = "active"
 EVENT_CLOSED = "closed"
 EVENT_RENAMED = "renamed"
+EVENT_EXECUTED = "executed"
 
 # Module-level reference: a tracker nothing points at is collected and its
 # slots stop firing.
@@ -205,6 +224,8 @@ class ViewTracker(object):
         self._active = False
         self._lists_readable = True
         self._connected = []  # type: list
+        self._execute_action = None  # type: object
+        self._shortcuts_hooked = False
 
     # -- install -------------------------------------------------------------
 
@@ -235,19 +256,23 @@ class ViewTracker(object):
         """
         self._active = False
 
-    def _connect(self, obj, attribute, signature):
-        # type: (object, str, str) -> bool
-        """Connect ``obj``'s signal to the scheduler, new-style or old-style.
+    def _connect(self, obj, attribute, signature, slot=None):
+        # type: (object, str, str, object) -> bool
+        """Connect ``obj``'s signal to ``slot`` (the scheduler unless given).
+
+        New-style, or old-style when that fails.
 
         PySide2 as the 6.0/7.0 products ship it hands back generic wrappers
         without the subclass's signal attributes; there the old-style
         string connect is the one that works.
         """
+        if slot is None:
+            slot = self._schedule
         try:
-            getattr(obj, attribute).connect(self._schedule)
+            getattr(obj, attribute).connect(slot)
         except Exception:
             try:
-                ok = self._core.QObject.connect(obj, self._core.SIGNAL(signature), self._schedule)
+                ok = self._core.QObject.connect(obj, self._core.SIGNAL(signature), slot)
             except Exception:
                 return False
             if not ok:
@@ -317,12 +342,18 @@ class ViewTracker(object):
         lists = []
         for widget in widgets:
             name = class_name(widget)
-            if name == DOCK_CLASS:
+            if name == TOOL_BUTTON_CLASS:
+                if self._execute_action is None:
+                    self._hook_execute_action(widget)
+            elif name == DOCK_CLASS:
                 docks.append(widget)
             elif name in PAGE_KINDS:
                 pages.append((widget, PAGE_KINDS[name]))
             elif name == ITEM_LIST_CLASS:
                 lists.append(widget)
+
+        if not self._shortcuts_hooked:
+            self._hook_execute_shortcuts()
 
         entries = []  # (name, data, source), recorded in this order
         opened = self._update_views(docks, pages, entries)
@@ -497,6 +528,99 @@ class ViewTracker(object):
             if changed:
                 data["changed"] = changed
             entries.append((item_list.view.name, data, SOURCE_PLOT_ITEM))
+
+    # -- executing a data file -----------------------------------------------
+
+    def _hook_execute_action(self, button):
+        # type: (object) -> None
+        """Listen to the Execute action if ``button`` is the one carrying it.
+
+        Asked through ``actions()``, which every widget has: the binding
+        may have wrapped the button without ``defaultAction()``.
+        """
+        try:
+            actions = button.actions()
+        except Exception:
+            return
+        for action in actions:
+            try:
+                if str(action.text()) != EXECUTE_ACTION_TEXT:
+                    continue
+            except Exception:
+                continue
+            if self._connect(action, "triggered", EXECUTE_ACTION_SIGNAL, self._on_execute):
+                self._execute_action = action
+            return
+
+    def _hook_execute_shortcuts(self):
+        """Listen to Ctrl+E and Ctrl+M, which bypass the Execute action."""
+        shortcut_class = getattr(self._widgets, "QShortcut", None)
+        if shortcut_class is None:  # Qt 6 moved it to QtGui
+            try:
+                binding = self._widgets.__name__.split(".")[0]
+                gui = __import__(binding + ".QtGui", fromlist=["QtGui"])
+                shortcut_class = gui.QShortcut
+            except Exception:
+                self._shortcuts_hooked = True  # nothing to find; stop looking
+                return
+        try:
+            windows = self._widgets.QApplication.topLevelWidgets()
+        except Exception:
+            return
+        slots = {EXECUTE_SHORTCUT: self._on_execute_shortcut, EXECUTE_MASTER_SHORTCUT: self._on_execute_master}
+        for window in windows:
+            try:
+                shortcuts = window.findChildren(shortcut_class)
+            except Exception:
+                continue
+            for shortcut in shortcuts:
+                try:
+                    key = str(shortcut.key().toString())
+                except Exception:
+                    continue
+                if key in slots and self._connect(shortcut, "activated", SHORTCUT_SIGNAL, slots[key]):
+                    self._shortcuts_hooked = True
+
+    def _on_execute(self, *args):
+        # The button: a Ctrl-click runs the master files.
+        self._executed(self._control_held())
+
+    def _on_execute_shortcut(self, *args):
+        # Ctrl+E: Ctrl is held by definition and means nothing more.
+        self._executed(False)
+
+    def _on_execute_master(self, *args):
+        self._executed(True)
+
+    def _control_held(self):
+        # type: () -> bool
+        try:
+            modifiers = self._widgets.QApplication.keyboardModifiers()
+            return bool(modifiers & self._core.Qt.ControlModifier)
+        except Exception:
+            return False
+
+    def _executed(self, master):
+        # type: (bool) -> None
+        """Record that the person ran the data file in front, or the master files.
+
+        No look from here: this runs inside the click, and the file in
+        front is already known from the focus change that put it there.
+        """
+        if not self._active:
+            return
+        try:
+            if master:
+                self._history.add(
+                    SOURCE_VIEW, "", data={"kind": KIND_DATA_FILE, "event": EVENT_EXECUTED, "master": True}
+                )
+                return
+            view = self._view_with_focus() or self._current
+            if view is None or view.kind != KIND_DATA_FILE:
+                return
+            self._history.add(SOURCE_VIEW, view.name, data={"kind": view.kind, "event": EVENT_EXECUTED})
+        except Exception as e:
+            logger.debug("View tracking could not record an execute: %s", e)
 
     # -- helpers -------------------------------------------------------------
 
