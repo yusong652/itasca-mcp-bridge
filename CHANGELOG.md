@@ -11,6 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ConnectionAbortedError` (WinError 10053) traceback into the product
   console. Other request failures go to the bridge log instead of the
   console.
+- Some engine errors raised inside a Python API call never reach Python
+  (PFC3D 7.0: `itasca.facetarray.set_conveyor` with a velocity normal to
+  the facets). The engine unwinds past the call, shows the error in a
+  message box, and the Python code is never resumed. The request used to
+  wait out its timeout and report "stuck in a C extension", and the bridge
+  state the call had set up stayed in place. One result: every later cycle
+  typed in the GUI console stopped at once with "interrupted by user". The
+  bridge now notices such a call the next time the code that made it runs
+  again. It answers the request with the engine's message (error code
+  `engine_abandoned`, or a failed task) and puts its own state back. The
+  modal guard's window now covers the whole snippet or task, not only
+  `itasca.command`, so the box is dismissed and its text is reported.
 
 ## [0.6.3] - 2026-10-05
 

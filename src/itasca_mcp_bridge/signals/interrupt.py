@@ -58,6 +58,22 @@ def _remove_legacy_callbacks(itasca_module):
             pass
 
 
+def _running_depth():
+    # type: () -> int
+    # Imported here: execution imports signals.
+    from ..execution.main_thread import running_depth
+
+    return running_depth()
+
+
+def _settle_abandoned_since(depth, error=None):
+    # type: (int, Optional[BaseException]) -> None
+    from ..execution.main_thread import running_depth, settle_abandoned
+
+    if running_depth() > depth:
+        settle_abandoned(depth, error)
+
+
 def _in_cycle_callback():
     # type: () -> bool
     """True while an execute_code snippet is running in the cycle callback."""
@@ -674,9 +690,14 @@ def register_interrupt_callback(itasca_module, position=INTERRUPT_CALLBACK_POSIT
             # person clicks OK. Mark the window so the guard's timer may
             # dismiss it; outside it, dialogs belong to whoever raised them.
             modal_guard.entered()
+            calls_before = _running_depth()
             try:
                 result = _original_command(cmd)
             except Exception as e:
+                # A snippet the cycle callback was running when the engine
+                # unwound past it is still listed, and still counted as
+                # inside the callback; it will never return.
+                _settle_abandoned_since(calls_before, e)
                 # A failing command inside the cycle callback makes the 6.0 engine
                 # abort the cycling it interrupted (see the resume section
                 # above); record it for the outer cycling command.
@@ -685,6 +706,7 @@ def register_interrupt_callback(itasca_module, position=INTERRUPT_CALLBACK_POSIT
                 raise
             finally:
                 modal_guard.left()
+                _settle_abandoned_since(calls_before)
             if checked:
                 _mcp_bridge_interrupt_check()
                 _resume_if_aborted(itasca_module, _original_command, cmd, start_cycle, seq_before)
