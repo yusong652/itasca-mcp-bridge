@@ -45,6 +45,7 @@ from ..signals import (
     unregister_exec_thread,
     ensure_cycle_callbacks,
 )
+from .main_thread import on_abandon
 from .termination import BridgeTimeout
 
 logger = logging.getLogger("itasca-mcp-bridge")
@@ -109,6 +110,38 @@ def run_snippet(code, output_buffer, request_id=None, ensure_callbacks=True):
         prior_task = peek_current_task()
         set_current_task(request_id)
 
+    def _restore():
+        sys.stdout = old_stdout
+        after_bridge_code()
+        if request_id is not None:
+            # Restore the outer task's current_task_id (or clear if no
+            # outer task). Must NOT unconditionally clear: see comment
+            # at the entry-time save above.
+            if prior_task is not None:
+                set_current_task(prior_task)
+            else:
+                clear_current_task()
+            clear_interrupt(request_id)
+            unregister_exec_thread(request_id)
+
+    capture = []  # the engine-console capture, once entered
+
+    def _abandoned(message):
+        # The engine never came back to this frame, so neither the
+        # capture's exit nor the finally below will run.
+        if capture:
+            capture[0].__exit__(None, None, None)
+        _restore()
+        return {
+            "status": "error",
+            "message": message,
+            "output": output_buffer.getvalue(),
+            "result": None,
+            "_error_code": "engine_abandoned",
+        }
+
+    on_abandon(run_snippet, _abandoned)
+
     try:
         import __main__
 
@@ -124,7 +157,9 @@ def run_snippet(code, output_buffer, request_id=None, ensure_callbacks=True):
         code = preprocess_source(code)
 
         cmdlog_dir = path_utils.logs_dir()
-        with capture_engine_console(sys.stdout, cmdlog_dir):
+        console = capture_engine_console(sys.stdout, cmdlog_dir)
+        with console:
+            capture.append(console)
             try:
                 code_obj = compile(code, SNIPPET_LABEL, "eval")
                 result = eval(code_obj, exec_globals, exec_globals)
@@ -209,18 +244,7 @@ def run_snippet(code, output_buffer, request_id=None, ensure_callbacks=True):
             "result": None,
         }
     finally:
-        sys.stdout = old_stdout
-        after_bridge_code()
-        if request_id is not None:
-            # Restore the outer task's current_task_id (or clear if no
-            # outer task). Must NOT unconditionally clear: see comment
-            # at the entry-time save above.
-            if prior_task is not None:
-                set_current_task(prior_task)
-            else:
-                clear_current_task()
-            clear_interrupt(request_id)
-            unregister_exec_thread(request_id)
+        _restore()
 
 
 def _serialize(result):

@@ -113,17 +113,27 @@ def _run_pending_snippet(code, request_id, future):
     so the cycle-callback registry is live by definition, and it must
     not be mutated from within a callback.
     """
+    from ..execution.main_thread import begin_call, end_call
     from ..execution.snippet import run_snippet
 
+    # Listed like the executor's own calls, so one the engine abandons is
+    # settled when the cycling command it ran inside returns (see
+    # execution.main_thread._running); its callback depth goes back too.
+    depth = _callback_depth[0] - 1
+    call = begin_call(run_snippet, future, unwind=lambda: _callback_depth.__setitem__(0, depth))
     try:
         result = run_snippet(code, StringIO(), request_id=request_id, ensure_callbacks=False)
-        future.set_result(result)
+        if not future.done():
+            future.set_result(result)
     except BaseException as e:
         # ``run_snippet`` catches BaseException internally; this is
         # defence-in-depth so a future change that lets one slip
         # doesn't strand the future.
         logger.error("Snippet callback execution failed: %s", e)
-        future.set_exception(e)
+        if not future.done():
+            future.set_exception(e)
+    finally:
+        end_call(call)
 
 
 def _mcp_bridge_executor_callback():

@@ -25,10 +25,18 @@ refuses that recursion -- and that is exactly the bridge's task pump:
 its normal rate. Measured on PFC3D 6.00.030: during a 2.1s box, 67 ticks
 of a 25ms timer against 0 of the pump.
 
+Not every such box comes from a command. An error the engine raises inside
+a Python API call (``itasca.facetarray.set_conveyor`` with a velocity
+normal to the facets, measured on PFC3D 7.00) shows a box of the same kind
+whatever "Raise Dialog on Error" says, and the call never returns: see
+``execution.main_thread._running``. What the box said is kept for that
+call's response (``dialogs_since``).
+
 Scope, deliberately narrow -- this runs inside someone's GUI:
 
-- Only while the bridge itself is inside an engine command. A box the
-  person at the keyboard raised while the bridge was idle is theirs.
+- Only while the bridge itself is running code on the engine's main
+  thread. A box the person at the keyboard raised while the bridge was
+  idle is theirs.
 - Only a ``QMessageBox`` carrying exactly one button. One button offers
   no choice, so pressing it decides nothing the engine was asking about.
   Anything else is left alone and reported once to the log: a bridge that
@@ -62,13 +70,19 @@ DEFAULT_POLL_INTERVAL_MS = 25
 _timer = None  # type: Any
 _qt_widgets = None  # type: Any
 
-# Depth of engine commands the bridge is currently inside. Every engine
-# command the bridge issues goes through one wrapper
-# (``signals.interrupt._wrapped_command``), which brackets the C call with
-# ``entered()`` / ``left()``; nesting comes from ``program call`` expansion
-# and from snippets run in a cycle callback. Commands run on the engine's
-# main thread, so a plain counter is enough.
+# How deep the bridge is in its own work on the engine's main thread. The
+# main-thread executor brackets each call it runs with ``entered()`` /
+# ``left()``, and so does the one wrapper every engine command goes through
+# (``signals.interrupt._wrapped_command``); nesting comes from ``program
+# call`` expansion and from snippets run in a cycle callback. All of it is
+# on the engine's main thread, so a plain counter is enough.
 _depth = 0
+
+# What the dismissed boxes said, newest last, and how many were dismissed
+# in all, so a caller can ask for the ones since a mark of its own.
+_dismissed = []  # type: List[str]
+_dismissed_total = 0
+_DISMISSED_KEPT = 20
 
 # Modal dialogs already reported as left alone, so a dialog that sits there
 # does not write a log line every tick. Keyed by what the dialog says, not
@@ -97,6 +111,40 @@ def left():
     global _depth
     if _depth > 0:
         _depth -= 1
+
+
+def depth():
+    # type: () -> int
+    """Current depth, to hand back to ``unwind_to``."""
+    return _depth
+
+
+def unwind_to(saved_depth):
+    # type: (int) -> None
+    """Drop back to ``saved_depth``: for a call whose ``left()`` never ran."""
+    global _depth
+    _depth = min(_depth, max(0, int(saved_depth)))
+
+
+def dialog_mark():
+    # type: () -> int
+    """A mark to pass to ``dialogs_since`` later."""
+    return _dismissed_total
+
+
+def dialogs_since(mark):
+    # type: (int) -> List[str]
+    """What the boxes dismissed after ``mark`` said, oldest first."""
+    count = min(_dismissed_total - mark, len(_dismissed))
+    return list(_dismissed[-count:]) if count > 0 else []
+
+
+def _remember(title, message):
+    # type: (Any, str) -> None
+    global _dismissed_total
+    _dismissed.append(message or str(title))
+    del _dismissed[:-_DISMISSED_KEPT]
+    _dismissed_total += 1
 
 
 def is_armed():
@@ -184,7 +232,7 @@ def _report_once(widget, buttons):
 
 def _tick():
     # type: () -> None
-    """One poll. Cheap and silent unless the bridge is mid-command."""
+    """One poll. Cheap and silent unless the bridge is running code."""
     if _depth <= 0 or _qt_widgets is None:
         return
     try:
@@ -207,6 +255,7 @@ def _tick():
         title = widget.windowTitle()
         message = _first_line(widget.property("text"))
         buttons[0].click()
+        _remember(title, message)
     except Exception as exc:
         # Never let a dialog the binding cannot describe take the GUI's
         # event loop down with it.
