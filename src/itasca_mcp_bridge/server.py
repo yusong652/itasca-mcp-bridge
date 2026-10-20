@@ -21,6 +21,7 @@ import json
 import logging
 import queue
 import socketserver
+import sys
 import threading
 import time
 
@@ -72,6 +73,19 @@ class _ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
 
     daemon_threads = True
     allow_reuse_address = True
+
+    def handle_error(self, request, client_address):
+        # A client that drops its keep-alive connection (a short-lived
+        # client process exiting, a killed request) fails this connection's
+        # thread in ``handle_one_request`` while it waits for the next
+        # request line -- ConnectionAbortedError (WinError 10053) on
+        # Windows. socketserver's default prints that traceback to stderr,
+        # which inside the product is the user's console. The connection is
+        # simply over; anything else is still reported, to the log.
+        exc = sys.exc_info()[1]
+        if isinstance(exc, ConnectionError):
+            return
+        logger.warning("Request from %s failed", client_address, exc_info=True)
 
 
 class _BridgeRequestHandler(http.server.BaseHTTPRequestHandler):

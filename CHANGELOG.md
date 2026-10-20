@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- A client that drops its connection no longer prints a
+  `ConnectionAbortedError` (WinError 10053) traceback into the product
+  console. Other request failures go to the bridge log instead of the
+  console.
+
 ## [0.6.3] - 2026-10-05
 
 ### Added
