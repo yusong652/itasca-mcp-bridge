@@ -128,6 +128,15 @@ ANNOUNCEMENTS = {
         "Needs the matching itasca-mcp release on the agent side; older ones "
         "simply do not show it.",
     ),
+    "0.6.4": (
+        "An engine error that pops up a message box from a Python call (PFC "
+        "7.0: a conveyor velocity not parallel to the facets) now comes back "
+        "to your agent right away with the engine's message; before, the call "
+        "hung until it timed out, and afterwards every cycle you started in "
+        "the GUI stopped at once as 'interrupted by user'.",
+        "A client disconnecting no longer prints a ConnectionAbortedError "
+        "traceback in your console.",
+    ),
 }
 
 
