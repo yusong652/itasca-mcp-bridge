@@ -651,7 +651,11 @@ def register_interrupt_callback(itasca_module, position=INTERRUPT_CALLBACK_POSIT
         #      callback lookup fail with "function is not defined").
         #   2. Auto-re-register callback after model new/restore (those commands
         #      clear ITASCA's internal callback registry).
-        _original_command = itasca_module.command
+        # A second start() in the same session wraps the engine's own
+        # command again, not the first wrapper: the engine function is kept
+        # on the wrapper as `_bridge_original`, which is also what
+        # unregister_interrupt_callback() puts back.
+        _original_command = getattr(itasca_module.command, "_bridge_original", itasca_module.command)
         import sys as _sys
 
         def _wrapped_command(cmd):
@@ -759,6 +763,7 @@ def register_interrupt_callback(itasca_module, position=INTERRUPT_CALLBACK_POSIT
                 _resume_if_aborted(itasca_module, _original_command, cmd, start_cycle, seq_before)
             return result
 
+        _wrapped_command._bridge_original = _original_command  # type: ignore[attr-defined]
         itasca_module.command = _wrapped_command
 
         # Remember the module so ensure_cycle_callbacks() can repair the
@@ -772,3 +777,27 @@ def register_interrupt_callback(itasca_module, position=INTERRUPT_CALLBACK_POSIT
     except Exception as e:
         logger.error("Failed to register interrupt callback: %s", e)
         return False
+
+
+def unregister_interrupt_callback(itasca_module):
+    # type: (Any) -> None
+    """Inverse of register_interrupt_callback(), for ``stop()``.
+
+    Removes the engine callback and puts the engine's own ``itasca.command``
+    back. The function stays in ``__main__``: unregistered it is never
+    called, and a save file written by a bridge older than 0.6.5 still
+    names it, so leaving it defined keeps such files restorable.
+
+    Never from inside a cycle callback: mutating the registry there
+    crashes the engine (see _re_register_callback).
+    """
+    global _itasca_module
+    if _in_cycle_callback():
+        raise RuntimeError("cannot unregister the cycle callbacks from inside a cycle callback")
+    # Same registry removal a `model save` does; here it is not undone.
+    _strip_cycle_callbacks(itasca_module)
+    original = getattr(itasca_module.command, "_bridge_original", None)
+    if original is not None:
+        itasca_module.command = original
+    _itasca_module = None
+    logger.info("Interrupt callback unregistered")

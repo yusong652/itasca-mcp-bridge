@@ -98,6 +98,11 @@ import itasca_mcp_bridge
 itasca_mcp_bridge.start()
 ```
 
+`itasca_mcp_bridge.status()` tells you the version, the address and
+whether the engine is idle or busy with a task. `itasca_mcp_bridge.stop()`
+shuts the bridge down and leaves the product as it was before `start()`;
+`start()` brings it back in the same session.
+
 ### Headless, agent-launched
 
 A console build runs the data file passed as its first argument, so an

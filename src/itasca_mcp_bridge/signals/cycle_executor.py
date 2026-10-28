@@ -227,3 +227,31 @@ def is_executor_callback_registered():
     # type: () -> bool
     """Check if executor callback is registered."""
     return _callback_registered
+
+
+def unregister_executor_callback(itasca_module):
+    # type: (Any) -> None
+    """Inverse of register_executor_callback(), for ``stop()``.
+
+    Removes the engine callback, fails every snippet still waiting for a
+    cycle gap (their requests are answered with the error), and clears
+    the registered flag so a later start() can register again. The
+    function stays in ``__main__`` (see unregister_interrupt_callback).
+    """
+    global _callback_registered
+    import queue as _queue
+
+    from .positions import remove_cycle_callback
+
+    remove_cycle_callback(itasca_module, "_mcp_bridge_executor_callback", EXECUTOR_CALLBACK_POSITION)
+    while True:
+        try:
+            _code, _request_id, future = _pending_queue.get_nowait()
+        except _queue.Empty:
+            break
+        try:
+            future.set_exception(RuntimeError("bridge stopped"))
+        except Exception:
+            pass
+    _callback_registered = False
+    logger.info("Executor callback unregistered")

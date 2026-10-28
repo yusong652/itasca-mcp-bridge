@@ -86,6 +86,10 @@ import itasca_mcp_bridge
 itasca_mcp_bridge.start()
 ```
 
+`itasca_mcp_bridge.status()` 报告版本、地址，以及引擎当前空闲还是正在跑某个
+任务。`itasca_mcp_bridge.stop()` 关闭 bridge，把产品恢复到 `start()` 之前的
+状态；同一会话里再次 `start()` 即可重新启动。
+
 ### 无头启动（由 agent 拉起）
 
 控制台构建会执行作为第一个参数传入的数据文件，因此 agent 可以自己把整套

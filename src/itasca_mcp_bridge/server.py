@@ -238,6 +238,9 @@ class _BridgeRequestHandler(http.server.BaseHTTPRequestHandler):
                     self.wfile.write(b": keepalive\n\n")
                     self.wfile.flush()
                     continue
+                if msg is None:
+                    # close_sse_clients(): the bridge is stopping.
+                    break
                 self.wfile.write(b"data: " + msg.encode("utf-8") + b"\n\n")
                 self.wfile.flush()
         except (ConnectionError, ValueError):
@@ -325,6 +328,23 @@ class ItascaHttpServer:
             self.active_connections.discard(q)
             total = len(self.active_connections)
         logger.info("SSE client disconnected (total=%d)", total)
+
+    def close_sse_clients(self):
+        # type: () -> None
+        """End every ``/events`` stream (``stop()``).
+
+        Each stream's handler thread sees the ``None`` sentinel, returns
+        and deregisters itself; the client reconnects once a bridge is
+        back. A full queue is skipped: that stream ends at its next write
+        after the listening socket is closed.
+        """
+        with self._conn_lock:
+            clients = list(self.active_connections)
+        for q in clients:
+            try:
+                q.put_nowait(None)
+            except queue.Full:
+                pass
 
     # -- Server->client doorbell --------------------------------------------
 
