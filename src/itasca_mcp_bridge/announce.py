@@ -137,6 +137,17 @@ ANNOUNCEMENTS = {
         "A client disconnecting no longer prints a ConnectionAbortedError "
         "traceback in your console.",
     ),
+    "0.6.5": (
+        "Save files no longer carry the bridge's cycle callbacks: a .sav written "
+        "while the bridge runs now restores cleanly in a session without it "
+        "(6.0 products used to crash on the first cycle).",
+        "Saves from earlier bridge versions still name them -- restore and re-save "
+        "with the bridge running, or define _mcp_bridge_interrupt_check and "
+        "_mcp_bridge_executor_callback as no-op functions before restoring without it.",
+        "itasca_mcp_bridge.stop() takes the bridge down and leaves the product as "
+        "before start(); itasca_mcp_bridge.status() shows version, port and "
+        "whether the engine is busy.",
+    ),
 }
 
 
