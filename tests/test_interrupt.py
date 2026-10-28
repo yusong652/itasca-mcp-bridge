@@ -414,6 +414,111 @@ class _RegistryFakeItasca:
         self.registry.clear()
 
 
+class _SaveRecordingFakeItasca(_RegistryFakeItasca):
+    """Registry fake that snapshots the registry as each command runs, the
+    way `model save` would serialize it, and can fail the save."""
+
+    def __init__(self, strict=False, fail_save=False):
+        super().__init__(strict=strict)
+        self.registry_at_command: list[tuple[str, set[tuple[str, float]]]] = []
+        self.fail_save = fail_save
+
+    def command(self, cmd):
+        self.registry_at_command.append((cmd, set(self.registry)))
+        if self.fail_save:
+            raise RuntimeError("save failed")
+
+
+class TestSaveStripsCycleCallbacks:
+    """`model save` writes the engine's cycle-callback table into the .sav,
+    the bridge's two names included; restoring that file without the bridge
+    crashes the 6.0 engine. The wrapper removes both callbacks for the
+    duration of a save it issues and puts them back afterwards."""
+
+    BRIDGE_NAMES = {"_mcp_bridge_interrupt_check", "_mcp_bridge_executor_callback"}
+
+    @pytest.fixture(autouse=True)
+    def _fresh_executor_registration(self, monkeypatch):
+        # register_executor_callback is one-shot per process; let every
+        # test register both callbacks on its own fake.
+        from itasca_mcp_bridge.signals import cycle_executor
+
+        monkeypatch.setattr(cycle_executor, "_callback_registered", False)
+
+    def _registered_fake(self, **kw) -> _SaveRecordingFakeItasca:
+        from itasca_mcp_bridge.signals.cycle_executor import register_executor_callback
+        from itasca_mcp_bridge.signals.interrupt import register_interrupt_callback
+
+        fake = _SaveRecordingFakeItasca(**kw)
+        assert register_interrupt_callback(fake) is True
+        assert register_executor_callback(fake) is True
+        return fake
+
+    @staticmethod
+    def _names(registry: set[tuple[str, float]]) -> set[str]:
+        return {name for name, _ in registry}
+
+    @pytest.mark.parametrize(
+        "cmd",
+        [
+            "model save 'scene'",
+            "mod sav 'scene'",
+            "model  save  'scene'",
+            "model\tsave 'scene'",
+            "MODEL SAVE 'scene'",
+            "model save",
+        ],
+    )
+    def test_save_runs_with_bridge_callbacks_removed(self, cmd):
+        fake = self._registered_fake()
+        assert self.BRIDGE_NAMES <= self._names(fake.registry)
+        fake.command(cmd)
+        (seen_cmd, registry_during_save), = fake.registry_at_command
+        assert seen_cmd == cmd
+        assert not (self.BRIDGE_NAMES & self._names(registry_during_save))
+        # Restored right after the save.
+        assert self.BRIDGE_NAMES <= self._names(fake.registry)
+
+    def test_user_callbacks_are_untouched(self):
+        fake = self._registered_fake()
+        fake.set_callback("my_callback", 50.0)
+        fake.command("model save 'scene'")
+        (_, registry_during_save), = fake.registry_at_command
+        assert ("my_callback", 50.0) in registry_during_save
+        assert ("my_callback", 50.0) in fake.registry
+
+    @pytest.mark.parametrize(
+        "cmd",
+        [
+            "model solve",
+            "model cycle 100",
+            "model save-later",  # not a save keyword
+            "model restore 'scene'",
+            "model save 'a'\nmodel cycle 100",  # unsplit batch: left alone
+        ],
+    )
+    def test_other_commands_keep_callbacks_live(self, cmd):
+        fake = self._registered_fake()
+        fake.command(cmd)
+        (_, registry_during), = fake.registry_at_command
+        assert self.BRIDGE_NAMES <= self._names(registry_during)
+
+    def test_failed_save_still_restores_callbacks(self):
+        fake = self._registered_fake(fail_save=True)
+        with pytest.raises(RuntimeError):
+            fake.command("model save 'scene'")
+        assert self.BRIDGE_NAMES <= self._names(fake.registry)
+
+    def test_save_inside_cycle_callback_leaves_registry_alone(self, monkeypatch):
+        from itasca_mcp_bridge.signals import cycle_executor
+
+        fake = self._registered_fake()
+        monkeypatch.setattr(cycle_executor, "_callback_depth", [1])
+        fake.command("model save 'scene'")
+        (_, registry_during), = fake.registry_at_command
+        assert self.BRIDGE_NAMES <= self._names(registry_during)
+
+
 class TestEnsureCycleCallbacks:
     """ensure_cycle_callbacks() is the entry-point bedrock repair: it
     must bring the registry back regardless of who emptied it, and must

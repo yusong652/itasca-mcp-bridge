@@ -6,6 +6,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `model save` no longer writes the bridge's two cycle callbacks into the
+  save file. The engine serializes its cycle-callback table into the
+  `.sav` (PFC 6.0, 7.0 and 9.7 all do), so a file saved while the bridge
+  was running carried `_mcp_bridge_interrupt_check` and
+  `_mcp_bridge_executor_callback` by name. Restoring it in a session
+  without the bridge left those names dangling: the 7.0 and 9.x engines
+  ignore them, the 6.0 engine crashes on the first cycle, after printing
+  "Trying to call the Python function _mcp_bridge_interrupt_check but this
+  function is not defined" when the cycle is driven from Python. The
+  bridge now removes both callbacks for the duration of a `model save` it
+  issues (including saves inside a called `.dat`) and re-registers them
+  right after. Saves typed in the GUI console or issued inside a FISH
+  `command` block do not pass through the bridge and are not covered.
+  Files saved by earlier bridge versions keep their names: restore and
+  re-save them with the bridge running to clean them, or define the two
+  names as no-op functions before restoring without it.
+
 ## [0.6.4] - 2026-10-20
 
 ### Fixed

@@ -23,7 +23,12 @@ import threading
 import logging
 from typing import Any, Optional
 
-from .positions import INTERRUPT_CALLBACK_POSITION, EXECUTOR_CALLBACK_POSITION, register_cycle_callback
+from .positions import (
+    INTERRUPT_CALLBACK_POSITION,
+    EXECUTOR_CALLBACK_POSITION,
+    register_cycle_callback,
+    remove_cycle_callback,
+)
 from ..utils.command_log import live_capture_paused
 from ..utils.program_call import expand_program_call
 from ..utils import modal_guard
@@ -572,6 +577,36 @@ def ensure_cycle_callbacks():
 # truncate, so a stale banner leads the next task's log.
 _LOG_CONTROL_RE = re.compile(r"^\s*pro\w*\s+log\b", re.IGNORECASE)
 
+# ``model save`` serializes the engine's cycle-callback table into the
+# .sav, the bridge's two Python callbacks included (by name and position;
+# verified 2026-10-28 on PFC 6.0, 7.0 and 9.7). Restoring such a file in a
+# session where the bridge is not running leaves two dangling names in the
+# registry: the 7.0 and 9.x engines ignore them, the 6.0 engine crashes on
+# the first cycle (python36.dll access violation, preceded by the red
+# "Trying to call the Python function _mcp_bridge_interrupt_check but this
+# function is not defined" when the cycle is driven from Python).
+#
+# So the bridge keeps its names out of save files: it removes both
+# callbacks for the duration of a `model save` it issues and re-registers
+# them right after. Matches a single command only; multi-line batches that
+# reach this wrapper unsplit are left alone so a cycling batch never runs
+# with an empty registry. Saves that bypass itasca.command (typed in the
+# GUI console, inside a FISH `command` block, a `program call` form the
+# expander cannot honor) are not covered.
+#
+# This exists for the 6.0 engine; once the bridge drops 6.0 support the
+# regex, _strip_cycle_callbacks and the two `strip` lines in
+# _wrapped_command can go together.
+_MODEL_SAVE_RE = re.compile(r"^\s*mo\w*[ \t]+sa\w*(?:[ \t][^\n]*)?$", re.IGNORECASE)
+
+
+def _strip_cycle_callbacks(itasca_module):
+    # type: (Any) -> None
+    """Remove both reserved cycle callbacks so a `model save` leaves them out
+    of the file. `_re_register_callback` is the inverse."""
+    remove_cycle_callback(itasca_module, "_mcp_bridge_interrupt_check", _interrupt_position)
+    remove_cycle_callback(itasca_module, "_mcp_bridge_executor_callback", EXECUTOR_CALLBACK_POSITION)
+
 
 def register_interrupt_callback(itasca_module, position=INTERRUPT_CALLBACK_POSITION):
     # type: (Any, float) -> bool
@@ -683,6 +718,13 @@ def register_interrupt_callback(itasca_module, position=INTERRUPT_CALLBACK_POSIT
                 # hard-crashes the engine (see _re_register_callback).
                 if not _in_cycle_callback():
                     _re_register_callback(itasca_module, position)
+            # A `model save` must not carry the bridge's callback names into
+            # the file (see _MODEL_SAVE_RE): strip them for its duration,
+            # restore them in the `finally` below. Never from inside a cycle
+            # callback, where mutating the registry crashes the engine.
+            strip = checked and not _in_cycle_callback() and _MODEL_SAVE_RE.match(cmd) is not None
+            if strip:
+                _strip_cycle_callbacks(itasca_module)
             seq_before = _callback_failure_seq
             start_cycle = _engine_cycle(itasca_module) if checked else None
             # The engine can raise a modal error box from inside this call
@@ -707,6 +749,11 @@ def register_interrupt_callback(itasca_module, position=INTERRUPT_CALLBACK_POSIT
             finally:
                 modal_guard.left()
                 _settle_abandoned_since(calls_before)
+                if strip:
+                    try:
+                        _re_register_callback(itasca_module, position)
+                    except Exception as e:  # never mask the save's own error
+                        logger.warning("Cycle callback re-registration after save failed: %s", e)
             if checked:
                 _mcp_bridge_interrupt_check()
                 _resume_if_aborted(itasca_module, _original_command, cmd, start_cycle, seq_before)
