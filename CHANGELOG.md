@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.5] - 2026-10-28
+
 ### Added
 - `itasca_mcp_bridge.status()` returns the bridge's state: `running`,
   `version`, and when running `host`, `port`, `mode`, `busy` and the
