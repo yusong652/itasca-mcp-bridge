@@ -6,6 +6,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `itasca_mcp_bridge.status()` returns the bridge's state: `running`,
+  `version`, and when running `host`, `port`, `mode`, `busy` and the
+  `task_id` of the task the engine is executing for a client.
+- `itasca_mcp_bridge.stop()` shuts the bridge down and leaves the product
+  as it was before `start()`: HTTP server and task pump stopped, queued
+  requests answered with an error, console capture, view tracking and the
+  modal guard removed, the two cycle callbacks removed from the engine
+  and `itasca.command` unwrapped. Refuses while a task or snippet is
+  executing; `start()` works again afterwards in the same session. Ctrl+C
+  on a console-mode bridge ends in the same teardown.
+
+### Changed
+- `start()` while a bridge is already running in the session raises
+  with a pointer to `stop()`, instead of wrapping the engine a second
+  time.
+
 ### Fixed
 - `model save` no longer writes the bridge's two cycle callbacks into the
   save file. The engine serializes its cycle-callback table into the

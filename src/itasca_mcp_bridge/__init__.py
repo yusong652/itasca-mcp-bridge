@@ -28,6 +28,7 @@ from .runtime import (  # noqa: F401  (re-exported for compatibility)
     DEFAULT_MAX_TASKS_PER_TICK,
     VALID_RUNTIME_MODES,
 )
+from .runtime import status, stop  # noqa: F401  (console API next to start)
 
 
 def start(

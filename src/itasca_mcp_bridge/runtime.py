@@ -9,6 +9,176 @@ Holds the implementation behind `itasca_mcp_bridge.start()` so the package
 # Keep global references to avoid Qt timer/callback garbage collection.
 _qt_task_timer = None
 
+# What start() set up, for status() and stop(). None while not running.
+_runtime = None  # type: Any
+
+
+class _Runtime(object):
+    """Everything stop() has to undo, captured by start()."""
+
+    def __init__(self, server, server_thread, main_executor, itasca_module,
+                 host, port, mode, log_handlers):
+        self.server = server
+        self.server_thread = server_thread
+        self.main_executor = main_executor
+        self.itasca_module = itasca_module
+        self.host = host
+        self.port = port
+        self.mode = mode  # "gui" or "console"
+        self.log_handlers = log_handlers
+
+
+def status():
+    # type: () -> dict
+    """The bridge's state, as a dict.
+
+    ``running`` and ``version`` always; when running also ``host``,
+    ``port``, ``mode`` ("gui" / "console"), ``busy`` and ``task_id`` --
+    busy means the engine is executing a task or a code snippet for a
+    client; ``task_id`` names the task (the id ``execute_task`` returned),
+    None for a snippet.
+    """
+    from . import __version__
+
+    rt = _runtime
+    info = {"running": rt is not None, "version": __version__}
+    if rt is None:
+        return info
+
+    from .execution.main_thread import running_depth
+    from .signals.interrupt import _in_cycle_callback, peek_current_task
+
+    # The interrupt machinery tracks snippets under their request id too;
+    # only ids the task manager knows are tasks.
+    current = peek_current_task()
+    tasks = rt.server.context.task_manager.tasks
+    task_id = current if current and current in tasks else None
+    busy = bool(current) or running_depth() > 0 or _in_cycle_callback()
+    info.update({
+        "host": rt.host,
+        "port": rt.port,
+        "mode": rt.mode,
+        "busy": busy,
+        "task_id": task_id,
+    })
+    return info
+
+
+def _fail_pending(main_executor, message):
+    # type: (Any, str) -> int
+    """Answer every request still queued for the main thread with an error."""
+    import queue as _queue
+
+    failed = 0
+    while True:
+        try:
+            _func, _args, _kwargs, future = main_executor.task_queue.get_nowait()
+        except _queue.Empty:
+            break
+        try:
+            future.set_exception(RuntimeError(message))
+            failed += 1
+        except Exception:
+            pass
+    return failed
+
+
+def stop():
+    # type: () -> bool
+    """Stop the bridge and leave the product as it was before start().
+
+    Shuts down the HTTP server, stops the task pump and the GUI hooks,
+    answers queued requests with an error, and removes the bridge's cycle
+    callbacks from the engine. Returns True if a bridge was running.
+
+    Refuses while the engine is executing a task or snippet for a client
+    (interrupt it first) and when called from a thread other than the
+    product's main thread. A console-mode bridge stops with Ctrl+C, which
+    ends in the same teardown.
+    """
+    global _runtime, _qt_task_timer
+    import logging
+    import threading
+
+    rt = _runtime
+    if rt is None:
+        print("Itasca MCP Bridge is not running.")
+        return False
+    if threading.current_thread().ident != rt.main_executor.main_thread_id:
+        raise RuntimeError("stop() must run on the product's main thread (its Python console)")
+    state = status()
+    if state["busy"]:
+        if state["task_id"]:
+            raise RuntimeError(
+                "Bridge is busy (task {}); interrupt the task first".format(state["task_id"])
+            )
+        raise RuntimeError("Bridge is busy; let the current request finish first")
+
+    logger = logging.getLogger("itasca-mcp-bridge")
+    logger.info("Stopping bridge on %s:%s", rt.host, rt.port)
+
+    # 1. Pumps: nothing new reaches the engine from here on.
+    if _qt_task_timer is not None:
+        try:
+            _qt_task_timer.stop()
+        except Exception:
+            pass
+        _qt_task_timer = None
+
+    # 2. Transport: no new requests; streams end; in-flight requests that
+    #    wait on the main thread get their answer below.
+    try:
+        rt.server.close_sse_clients()
+    except Exception as e:
+        logger.warning("Closing SSE streams failed: %s", e)
+    try:
+        rt.server.shutdown()
+    except Exception as e:
+        logger.warning("Server shutdown failed: %s", e)
+    try:
+        rt.server_thread.join(2.0)
+    except Exception:
+        pass
+    failed = _fail_pending(rt.main_executor, "bridge stopped")
+    if failed:
+        logger.info("Failed %d queued request(s): bridge stopped", failed)
+
+    # 3. GUI hooks (installed only when the Qt pump won).
+    if rt.mode == "gui":
+        from .console import capture as console_capture
+        from .console import views as console_views
+        from .utils import modal_guard
+
+        for name, uninstall in (
+            ("Console capture", console_capture.uninstall),
+            ("View tracking", console_views.uninstall),
+            ("Modal guard", modal_guard.uninstall),
+        ):
+            try:
+                uninstall()
+            except Exception as e:
+                logger.warning("%s uninstall failed: %s", name, e)
+
+    # 4. Engine: the two cycle callbacks and the itasca.command wrapper.
+    from .signals import unregister_executor_callback, unregister_interrupt_callback
+
+    unregister_executor_callback(rt.itasca_module)
+    unregister_interrupt_callback(rt.itasca_module)
+
+    # 5. Logging: release bridge.log.
+    logger.info("Bridge stopped")
+    root_logger = logging.getLogger()
+    for handler in rt.log_handlers:
+        try:
+            root_logger.removeHandler(handler)
+            handler.close()
+        except Exception:
+            pass
+
+    _runtime = None
+    print("Itasca MCP Bridge stopped (port {}).".format(rt.port))
+    return True
+
 DEFAULT_TIMER_INTERVAL_MS = 20
 DEFAULT_MAX_TASKS_PER_TICK = 1
 VALID_RUNTIME_MODES = ("auto", "gui", "console")
@@ -279,9 +449,16 @@ def start(
     mode="auto",
 ):
     """Start the bridge server and task pump. See `itasca_mcp_bridge.start`."""
+    global _runtime
     import sys
     import os
     import logging
+
+    if _runtime is not None:
+        raise RuntimeError(
+            "Bridge is already running on {}:{}; call itasca_mcp_bridge.stop() "
+            "first".format(_runtime.host, _runtime.port)
+        )
 
     from . import __version__
     from .upgrade import ENV_UPGRADED_FROM
@@ -463,6 +640,17 @@ def start(
     # bridge.log, where INFO lands (the stdout handler is WARNING and up).
     upgraded_from = os.environ.pop(ENV_UPGRADED_FROM, None)
 
+    _runtime = _Runtime(
+        server=itasca_server,
+        server_thread=server_thread,
+        main_executor=main_executor,
+        itasca_module=it,
+        host=host,
+        port=port,
+        mode="gui" if qt_running else "console",
+        log_handlers=[file_handler, stream_handler],
+    )
+
     logger.info("Engine: %s", sys.executable)
     logger.info("Package: %s", os.path.dirname(os.path.abspath(__file__)))
     logger.info("Pump: interval=%sms, max_tasks_per_tick=%s", interval_ms, max_tasks_per_tick)
@@ -493,3 +681,8 @@ def start(
     if use_blocking:
         print("Bridge started in blocking mode (console). Press Ctrl+C to stop.")
         _run_blocking_pump(main_executor, interval_ms, max_tasks_per_tick, logger)
+        # Ctrl+C ended the pump; take the rest down the same way stop() would.
+        try:
+            stop()
+        except Exception as e:
+            logger.warning("Teardown after Ctrl+C failed: %s", e)

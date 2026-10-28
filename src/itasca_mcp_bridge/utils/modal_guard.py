@@ -265,6 +265,20 @@ def _tick():
     logger.info("Dismissed a blocking engine dialog: %s -- %s", title, message)
 
 
+def uninstall():
+    # type: () -> None
+    """Disarm the guard (``stop()``): stop its timer and drop it."""
+    global _timer
+    if _timer is None:
+        return
+    try:
+        _timer.stop()
+    except Exception:
+        pass
+    _timer = None
+    logger.info("Modal guard disarmed")
+
+
 def install(interval_ms=DEFAULT_POLL_INTERVAL_MS):
     # type: (int) -> bool
     """Arm the guard on the Qt event loop. Returns False if it cannot be.
