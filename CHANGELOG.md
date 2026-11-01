@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.6] - 2026-11-01
+
+### Fixed
+- `model save` issued from a user's own Python cycle callback (a "save
+  every N cycles" callback) crashed PFC 6.0 since 0.6.5: the restore after
+  the save removed the bridge's callbacks a second time inside the cycle
+  callback, which that engine does not survive. The restore is now a plain
+  `set_callback`. Saves from callbacks stay free of the bridge's names.
+
 ## [0.6.5] - 2026-10-28
 
 ### Added
