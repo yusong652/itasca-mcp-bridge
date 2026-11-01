@@ -509,6 +509,31 @@ class TestSaveStripsCycleCallbacks:
             fake.command("model save 'scene'")
         assert self.BRIDGE_NAMES <= self._names(fake.registry)
 
+    def test_restore_after_save_never_removes(self):
+        """A user's own Python cycle callback may issue the save. On the 6.0
+        engine, removing a (name, position) a second time inside a cycle
+        callback -- after the strip already removed it -- kills the process
+        (verified 2026-11-01), so the restore must be a plain set_callback."""
+        fake = self._registered_fake()
+        removed: list[tuple[str, float]] = []
+        original_remove = fake.remove_callback
+
+        def recording_remove(name, position):
+            removed.append((name, position))
+            original_remove(name, position)
+
+        fake.remove_callback = recording_remove  # type: ignore[method-assign]
+        fake.command("model save 'scene'")
+        (_, registry_during_save), = fake.registry_at_command
+        assert not (self.BRIDGE_NAMES & self._names(registry_during_save))
+        assert self.BRIDGE_NAMES <= self._names(fake.registry)
+        # Each bridge name removed by the strip -- and by nothing after it.
+        # The pre-dispatch repair's remove+set precedes the strip.
+        strip_removes = removed[-2:]
+        assert {name for name, _ in strip_removes} == self.BRIDGE_NAMES
+        assert removed.count(("_mcp_bridge_interrupt_check", 50.0)) <= 2
+        assert removed.count(("_mcp_bridge_executor_callback", 51.0)) <= 2
+
     def test_save_inside_cycle_callback_leaves_registry_alone(self, monkeypatch):
         from itasca_mcp_bridge.signals import cycle_executor
 
