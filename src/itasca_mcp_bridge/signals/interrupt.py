@@ -587,25 +587,55 @@ _LOG_CONTROL_RE = re.compile(r"^\s*pro\w*\s+log\b", re.IGNORECASE)
 # function is not defined" when the cycle is driven from Python).
 #
 # So the bridge keeps its names out of save files: it removes both
-# callbacks for the duration of a `model save` it issues and re-registers
-# them right after. Matches a single command only; multi-line batches that
+# callbacks for the duration of a `model save` it issues and puts them
+# back right after. Matches a single command only; multi-line batches that
 # reach this wrapper unsplit are left alone so a cycling batch never runs
 # with an empty registry. Saves that bypass itasca.command (typed in the
 # GUI console, inside a FISH `command` block, a `program call` form the
 # expander cannot honor) are not covered.
 #
+# Putting them back is a plain set_callback, never remove-then-set: a
+# user's own Python cycle callback may issue the save (a "save every N
+# cycles" callback is ordinary), and on the 6.0 engine removing a
+# (name, position) a second time inside a cycle callback -- after this
+# wrapper's strip already removed it -- kills the process at once (access
+# violation in module3d006.dll; PFC3D 6.00.030, verified 2026-11-01 on the
+# GUI and the console build, with and without the capture layer). Removing
+# a never-registered name there is harmless, and so is remove+set of a
+# live one, so the ordinary pre-dispatch repair is unaffected; only the
+# remove of an entry this same cycle already removed is fatal.
+#
 # This exists for the 6.0 engine; once the bridge drops 6.0 support the
-# regex, _strip_cycle_callbacks and the two `strip` lines in
-# _wrapped_command can go together.
+# regex, _strip_cycle_callbacks, _restore_cycle_callbacks and the two
+# `strip` lines in _wrapped_command can go together.
 _MODEL_SAVE_RE = re.compile(r"^\s*mo\w*[ \t]+sa\w*(?:[ \t][^\n]*)?$", re.IGNORECASE)
 
 
 def _strip_cycle_callbacks(itasca_module):
     # type: (Any) -> None
     """Remove both reserved cycle callbacks so a `model save` leaves them out
-    of the file. `_re_register_callback` is the inverse."""
+    of the file. `_restore_cycle_callbacks` is the inverse."""
     remove_cycle_callback(itasca_module, "_mcp_bridge_interrupt_check", _interrupt_position)
     remove_cycle_callback(itasca_module, "_mcp_bridge_executor_callback", EXECUTOR_CALLBACK_POSITION)
+
+
+def _restore_cycle_callbacks(itasca_module, position):
+    # type: (Any, float) -> None
+    """Put back what `_strip_cycle_callbacks` removed, with a plain
+    set_callback: the strip guarantees the names are absent, and a second
+    remove of them inside a cycle callback crashes the 6.0 engine (see
+    _MODEL_SAVE_RE). Not `_re_register_callback`, which removes first."""
+    import __main__
+
+    __main__._mcp_bridge_interrupt_check = _mcp_bridge_interrupt_check  # type: ignore[attr-defined]
+    itasca_module.set_callback("_mcp_bridge_interrupt_check", position)
+    try:
+        from .cycle_executor import _mcp_bridge_executor_callback, is_executor_callback_registered
+    except ImportError:
+        return
+    if is_executor_callback_registered():
+        __main__._mcp_bridge_executor_callback = _mcp_bridge_executor_callback  # type: ignore[attr-defined]
+        itasca_module.set_callback("_mcp_bridge_executor_callback", EXECUTOR_CALLBACK_POSITION)
 
 
 def register_interrupt_callback(itasca_module, position=INTERRUPT_CALLBACK_POSITION):
@@ -724,8 +754,10 @@ def register_interrupt_callback(itasca_module, position=INTERRUPT_CALLBACK_POSIT
                     _re_register_callback(itasca_module, position)
             # A `model save` must not carry the bridge's callback names into
             # the file (see _MODEL_SAVE_RE): strip them for its duration,
-            # restore them in the `finally` below. Never from inside a cycle
-            # callback, where mutating the registry crashes the engine.
+            # restore them in the `finally` below. Not from inside the
+            # executor's cycle callback, whose snippet may run anything;
+            # a user's own cycle callback issuing the save still goes
+            # through here, which is why the restore never removes.
             strip = checked and not _in_cycle_callback() and _MODEL_SAVE_RE.match(cmd) is not None
             if strip:
                 _strip_cycle_callbacks(itasca_module)
@@ -755,9 +787,9 @@ def register_interrupt_callback(itasca_module, position=INTERRUPT_CALLBACK_POSIT
                 _settle_abandoned_since(calls_before)
                 if strip:
                     try:
-                        _re_register_callback(itasca_module, position)
+                        _restore_cycle_callbacks(itasca_module, position)
                     except Exception as e:  # never mask the save's own error
-                        logger.warning("Cycle callback re-registration after save failed: %s", e)
+                        logger.warning("Cycle callback restore after save failed: %s", e)
             if checked:
                 _mcp_bridge_interrupt_check()
                 _resume_if_aborted(itasca_module, _original_command, cmd, start_cycle, seq_before)
