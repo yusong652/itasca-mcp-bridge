@@ -148,6 +148,11 @@ ANNOUNCEMENTS = {
         "before start(); itasca_mcp_bridge.status() shows version, port and "
         "whether the engine is busy.",
     ),
+    "0.6.6": (
+        "Fixes a PFC 6.0 crash on `model save` issued from inside a Python cycle "
+        "callback (introduced in 0.6.5). Saving from a callback is safe again and "
+        "the file still leaves out the bridge's callbacks.",
+    ),
 }
 
 
