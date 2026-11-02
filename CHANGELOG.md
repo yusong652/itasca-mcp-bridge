@@ -6,7 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.7] - 2026-11-02
+
 ### Added
+- The console history reports what the person does to a data file in the
+  GUI editor: `modified` when the buffer first differs from disk, `saved`
+  when they save it (with a size-capped unified diff of what changed since
+  they began editing, and the file's path), `reverted` when they undo
+  their edits, `reloaded` when the editor takes the file from disk (an
+  external change, including the bridge's own). A client that writes
+  files the person may be editing can now tell when to hold off and when
+  to re-read.
 - The files the bridge runs are listed in the GUI project's Data Files,
   as a `program call` typed at the product's prompt would list them: a
   data file the bridge expands, and the Python script of every task once
@@ -19,15 +29,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its files, and the one-button "will be reloaded" notice that check
   raises for an unmodified buffer is accepted by the bridge. A buffer with
   unsaved edits still gets the GUI's Load / Save / Do Nothing choice.
-- `reloaded` joins the data-file events: the editor took the file from
-  disk (an external change, including the bridge's own), as distinct from
-  `reverted`, the person undoing their edits.
-- The console history reports what the person does to a data file in the
-  GUI editor: `modified` when the buffer first differs from disk, `saved`
-  when they save it (with a size-capped unified diff of what changed since
-  they began editing, and the file's path), `reverted` when the edits are
-  discarded or the file reloaded from disk. A client that writes files the
-  person may be editing can now tell when to hold off and when to re-read.
 
 ### Fixed
 - A data file with unsaved edits is no longer reported as renamed to
