@@ -153,6 +153,13 @@ ANNOUNCEMENTS = {
         "callback (introduced in 0.6.5). Saving from a callback is safe again and "
         "the file still leaves out the bridge's callbacks.",
     ),
+    "0.6.7": (
+        "The scripts and data files your agent runs now appear in the Project "
+        "pane's Data Files, and a file it changes while you have it open in the "
+        "editor is reloaded right away (files with unsaved edits still ask you).",
+        "Your agent now sees your edits too: when you save a data file in the "
+        "editor it gets the diff, and it holds off writing a file you are editing.",
+    ),
 }
 
 
