@@ -97,6 +97,12 @@ Editing a data file (measured on PFC 7.0)
     under its feet. The GUI shows a modified buffer by a ``*`` after the
     dock's title; that is stripped from names, not reported as a rename.
 
+    Loading the file from disk -- the editor's answer to an external
+    change, the person's or the GUI's own -- sends the same two notices
+    as typing and undoing, modified then clean, but within one event-loop
+    pass; a clean that follows its modified that closely is recorded as
+    ``reloaded``, not ``reverted``.
+
     A ``saved`` entry carries the diff of what the person changed: the
     file is read when the buffer turns modified (what they started from)
     and again on the save, and the two are compared. Capped in size -- the
@@ -124,6 +130,7 @@ Python 3.6 compatible implementation.
 import difflib
 import logging
 import os
+import time
 
 from .history import SOURCE_COMMAND, SOURCE_PLOT_ITEM, SOURCE_PYTHON, SOURCE_VIEW
 
@@ -167,6 +174,11 @@ EVENT_EXECUTED = "executed"
 EVENT_MODIFIED = "modified"
 EVENT_SAVED = "saved"
 EVENT_REVERTED = "reverted"
+EVENT_RELOADED = "reloaded"
+
+# A buffer clean again this soon after turning modified was not typed in
+# and undone by a person: the editor replaced it with the file on disk.
+RELOAD_WINDOW_S = 1.0
 
 # Module-level reference: a tracker nothing points at is collected and its
 # slots stop firing.
@@ -320,6 +332,7 @@ class ViewTracker(object):
         self._shortcuts_hooked = False
         self._editor_pages = []  # type: list  # pages whose notices are hooked
         self._baselines = {}  # type: dict  # path -> text when editing began
+        self._modified_at = {}  # type: dict  # path -> when it turned modified
         self._clean_pending = set()  # type: set  # paths clean again, save not yet seen
 
     # -- install -------------------------------------------------------------
@@ -747,6 +760,7 @@ class ViewTracker(object):
                 # editing from the same starting point, nothing new to say.
                 return
             self._baselines[path] = read_text(path)
+            self._modified_at[path] = time.time()
             self._record_file(path, {"kind": KIND_DATA_FILE, "event": EVENT_MODIFIED})
         except Exception as e:
             logger.debug("View tracking could not record an edit: %s", e)
@@ -767,8 +781,12 @@ class ViewTracker(object):
             return  # a save claimed it
         self._clean_pending.discard(path)
         self._baselines.pop(path, None)
-        if self._active:
-            self._record_file(path, {"kind": KIND_DATA_FILE, "event": EVENT_REVERTED})
+        modified_at = self._modified_at.pop(path, None)
+        if not self._active:
+            return
+        reloaded = modified_at is not None and time.time() - modified_at < RELOAD_WINDOW_S
+        event = EVENT_RELOADED if reloaded else EVENT_REVERTED
+        self._record_file(path, {"kind": KIND_DATA_FILE, "event": event})
 
     def _on_saved(self, path, *args):
         """The file on disk is now what the person wrote; report it with the diff."""
@@ -778,6 +796,7 @@ class ViewTracker(object):
             path = str(path)
             self._clean_pending.discard(path)
             before = self._baselines.pop(path, None)
+            self._modified_at.pop(path, None)
             data = {"kind": KIND_DATA_FILE, "event": EVENT_SAVED}
             if before is not None:
                 after = read_text(path)

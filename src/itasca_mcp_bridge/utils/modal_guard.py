@@ -50,6 +50,16 @@ Warning) is non-modal by design -- the manual has it left open alongside
 the program -- and so is the cycling dialog; neither holds the engine
 call, and neither is this module's business.
 
+One more box is answered, idle or not: the editor's "Editor file ... will
+be reloaded (It was modified externally)" notice, a single OK the GUI
+shows before it reloads a data file that changed on disk under an open,
+unmodified editor (measured on PFC 7.0). The bridge brings that box up
+itself -- its code wrote the file, then asked the editor to look (see
+``console.project_files.refresh_editors``) -- so that the person sees the
+change without switching windows, and the OK is the bridge's to press.
+The three-button box for a file with unsaved edits is a real choice and
+is left to the person.
+
 Python 3.6 compatible implementation.
 """
 
@@ -96,6 +106,10 @@ _reported = set()
 # is not reported afresh.
 FORGET_AFTER_S = 2.0
 _last_seen = 0.0
+
+# What the editor's reload notice says (PFC 7.0: "Editor file <path> will
+# be reloaded.\n  (It was modifed externally)" -- sic).
+RELOAD_NOTICE_MARK = "will be reloaded"
 
 
 def entered():
@@ -230,18 +244,48 @@ def _report_once(widget, buttons):
     )
 
 
+def _is_reload_notice(widget):
+    # type: (Any) -> bool
+    """The editor's "file will be reloaded" box: one OK, nothing to decide."""
+    try:
+        if not widget.inherits("QMessageBox"):
+            return False
+        text = str(widget.property("text") or "")
+        if RELOAD_NOTICE_MARK not in text:
+            return False
+        return len(widget.findChildren(_qt_widgets.QAbstractButton)) == 1
+    except Exception:
+        return False
+
+
 def _tick():
     # type: () -> None
-    """One poll. Cheap and silent unless the bridge is running code."""
-    if _depth <= 0 or _qt_widgets is None:
+    """One poll. Cheap and silent unless a dialog the guard answers is up."""
+    if _qt_widgets is None:
         return
     try:
         widget = _qt_widgets.QApplication.activeModalWidget()
     except Exception:
         return
     if widget is None:
-        if _reported and time.time() - _last_seen > FORGET_AFTER_S:
+        if _depth > 0 and _reported and time.time() - _last_seen > FORGET_AFTER_S:
             _reported.clear()
+        return
+
+    # The editor's reload notice is answered whether or not the bridge is
+    # running code: the bridge raised it, by changing the file and asking
+    # for the check (see console.project_files.refresh_editors).
+    if _is_reload_notice(widget):
+        try:
+            message = _first_line(widget.property("text"))
+            widget.findChildren(_qt_widgets.QAbstractButton)[0].click()
+        except Exception as exc:
+            logger.debug("Modal guard could not accept the reload notice: %s", exc)
+            return
+        logger.info("Accepted the editor's reload notice: %s", message)
+        return
+
+    if _depth <= 0:
         return
 
     try:

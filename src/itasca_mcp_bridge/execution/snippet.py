@@ -113,6 +113,10 @@ def run_snippet(code, output_buffer, request_id=None, ensure_callbacks=True):
     def _restore():
         sys.stdout = old_stdout
         after_bridge_code()
+        # Files this snippet wrote reach the GUI's editors (never raises).
+        from ..console.project_files import refresh_editors
+
+        refresh_editors()
         if request_id is not None:
             # Restore the outer task's current_task_id (or clear if no
             # outer task). Must NOT unconditionally clear: see comment
