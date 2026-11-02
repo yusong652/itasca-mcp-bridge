@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- A data file's `saved` entry arrived several times for one save on
+  PFC 6.0 / 7.0 (3, then 7, then 12 times as the session went on), and
+  the editor's other notices were connected as many times over. PySide2
+  5.11 declares a live editor page's Python wrapper dead and hands out a
+  new one; the page was connected again through each, the old connections
+  staying alive in Qt. A connected page or plot-item model is now marked
+  on the C++ object itself (a Qt dynamic property), so a new wrapper of it
+  is left alone. Measured on PFC 6.0: one save, one `saved`.
+
 ## [0.6.7] - 2026-11-02
 
 ### Added

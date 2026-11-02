@@ -124,6 +124,16 @@ Identity
     view whose dock went missing while one of the same kind and name
     turned up is the same view, not one closed and one opened.
 
+    Signals are connected to an object once, and the object -- not the
+    wrapper -- is what remembers it: a Qt dynamic property
+    (``HOOKED_PROPERTY``) set on the C++ object, read back through
+    whatever wrapper the next look gets. Holding the connected wrappers
+    and asking ``is`` was not enough: an editor page whose wrapper had
+    been declared dead was connected again through its new wrapper, the
+    old connections staying alive in Qt, and every notice then arrived
+    once per wrapper there had been (PFC 6.0: one save reported 3, 7,
+    then 12 times as the session went on).
+
 Python 3.6 compatible implementation.
 """
 
@@ -156,6 +166,10 @@ NOTICE_MODIFIED = ("modifiedNotice", "modifiedNotice(QString,QString)")
 NOTICE_CLEAN = ("noLongerModifiedNotice", "noLongerModifiedNotice(QString,QString)")
 NOTICE_SAVED = ("saveNotice", "saveNotice(QString,QString)")
 NOTICE_CLOSED = ("closeNotice", "closeNotice(QString,QString)")
+
+# Set on a C++ object whose signals this module has connected; on the
+# object, not its Python wrapper (see Identity).
+HOOKED_PROPERTY = "_itasca_mcp_bridge_hooked"
 
 # A file read for a diff, at most; a diff reported, at most.
 MAX_SNAPSHOT_BYTES = 1024 * 1024
@@ -530,12 +544,12 @@ class ViewTracker(object):
                 self._lists_readable = False
                 logger.info("Plot item lists are not readable with this Qt binding")
                 return
-            for signal in ("rowsInserted", "rowsRemoved", "dataChanged", "modelReset", "layoutChanged"):
-                try:
-                    getattr(model, signal).connect(self._schedule)
-                except Exception:
-                    pass
-            self._connected.append(model)
+            if _first_hook(model, self._connected):
+                for signal in ("rowsInserted", "rowsRemoved", "dataChanged", "modelReset", "layoutChanged"):
+                    try:
+                        getattr(model, signal).connect(self._schedule)
+                    except Exception:
+                        pass
             self._lists.append(_ItemList(widget, model))
 
         # A list inside a plot's own dock is that plot's.
@@ -736,10 +750,9 @@ class ViewTracker(object):
 
     def _hook_editor_page(self, page):
         # type: (object) -> None
-        """Listen to the page's buffer notices, once per page."""
-        if any(page is p for p in self._editor_pages):
+        """Listen to the page's buffer notices, once per page (not per wrapper)."""
+        if not _first_hook(page, self._editor_pages):
             return
-        self._editor_pages.append(page)
         for (attribute, signature), slot in (
             (NOTICE_MODIFIED, self._on_modified),
             (NOTICE_CLEAN, self._on_clean),
@@ -853,6 +866,27 @@ class ViewTracker(object):
                     item_list.items = items
                 return items
         return None
+
+
+def _first_hook(obj, seen):
+    # type: (object, list) -> bool
+    """True the first time ``obj`` comes by; mark it so its next wrapper says no.
+
+    The mark is a Qt dynamic property on the C++ object (see Identity):
+    a wrapper the binding declared dead while the object lives on would
+    otherwise have the object connected once more, and every signal then
+    arrives once per wrapper. ``seen`` keeps the wrappers connected so far
+    and is the identity fallback for an object that has no properties.
+    """
+    try:
+        if obj.property(HOOKED_PROPERTY):
+            return False
+        obj.setProperty(HOOKED_PROPERTY, True)
+    except Exception:
+        if any(obj is o for o in seen):
+            return False
+    seen.append(obj)
+    return True
 
 
 def _containing(docks, widget):

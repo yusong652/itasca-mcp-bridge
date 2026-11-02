@@ -80,8 +80,22 @@ class _Signal:
             fn(*args)
 
 
-class _Widget:
+class _Properties:
+    """Qt dynamic properties: on the C++ object, shared by all its wrappers."""
+
+    def __init__(self):
+        self._props = {}
+
+    def property(self, name):
+        return self._props.get(name)
+
+    def setProperty(self, name, value):
+        self._props[name] = value
+
+
+class _Widget(_Properties):
     def __init__(self, cls, parent=None, title="", visible=True):
+        super().__init__()
         self._cls = cls
         self._parent = parent
         self.title = title
@@ -116,8 +130,9 @@ class _Item:
         return self._text
 
 
-class _Model:
+class _Model(_Properties):
     def __init__(self):
+        super().__init__()
         self.rowsInserted = _Signal()
         self.rowsRemoved = _Signal()
         self.dataChanged = _Signal()
@@ -867,3 +882,49 @@ def test_edits_are_not_recorded_after_uninstall(gui, history, tmp_path):
     _save(editor, path)
 
     assert _entries(history) == []
+
+
+# ---------------------------------------------------------------------------
+# Wrappers replaced under the tracker (see the module's Identity section)
+# ---------------------------------------------------------------------------
+
+
+def _rewrap(widget, **shared):
+    """A new Python wrapper for the same C++ object: same properties and signals."""
+    new = type(widget).__new__(type(widget))
+    new.__dict__.update(widget.__dict__)
+    new.__dict__.update(shared)
+    return new
+
+
+def test_a_page_seen_through_a_new_wrapper_is_not_hooked_again(gui, history, tmp_path):
+    # PySide2 5.11 declares a live page's wrapper dead and hands out a new one;
+    # the old wrapper's connections live on in Qt, so hooking the new one too
+    # had every notice arrive once per wrapper (PFC 6.0: one save, 12 `saved`).
+    script = tmp_path / "script.dat"
+    script.write_text("model new\n")
+    path = str(script).replace("\\", "/")
+    editor = _editor_with_notices(gui, "script")
+    tracker = _install(gui, history)
+    _entries(history)
+
+    gui.widgets[gui.widgets.index(editor.page)] = _rewrap(editor.page)
+    tracker.look()
+    _entries(history)
+
+    editor.page.modifiedNotice.emit(path, "Edit")
+    script.write_text("model new\nmodel cycle 10\n")
+    _save(editor, path)
+
+    assert [e[2]["event"] for e in _entries(history)] == ["modified", "saved"]
+    assert len(editor.page.saveNotice.slots) == 1
+
+
+def test_an_item_list_seen_through_a_new_wrapper_keeps_one_model_hook(gui, history):
+    item_list = gui.item_list(["Ball", "Legend"], visible=True)
+    tracker = _install(gui, history)
+
+    gui.widgets[gui.widgets.index(item_list)] = _rewrap(item_list)
+    tracker.look()
+
+    assert len(item_list.model().rowsInserted.slots) == 1
