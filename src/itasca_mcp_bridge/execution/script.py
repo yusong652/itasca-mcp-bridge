@@ -90,6 +90,7 @@ class ScriptRunner:
         # rerun: it is listed in the GUI project's Data Files once the task
         # is over and the GUI idle again (see console.project_files).
         from ..console.project_files import flush_deferred as flush_data_files
+        from ..console.project_files import refresh_editors
         from ..console.project_files import register as register_data_file
 
         # Plots the script opens reach the client's next read (see
@@ -113,6 +114,7 @@ class ScriptRunner:
             clear_interrupt(task_id)
             register_data_file(script_path, force=True)
             flush_data_files()
+            refresh_editors()
 
         capture = []  # the engine-console capture, once entered
 

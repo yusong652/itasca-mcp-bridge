@@ -13,6 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the task is over. The file shows as closed in the Project pane and can
   be opened or rerun from there; a file already listed (one the person
   may have open) is left alone, and the view in front stays in front.
+- A data file the bridge's code changes on disk while the person has it
+  open in the GUI editor is reloaded right away, instead of when they next
+  switch windows: after a snippet or a task the editor is asked to check
+  its files, and the one-button "will be reloaded" notice that check
+  raises for an unmodified buffer is accepted by the bridge. A buffer with
+  unsaved edits still gets the GUI's Load / Save / Do Nothing choice.
+- `reloaded` joins the data-file events: the editor took the file from
+  disk (an external change, including the bridge's own), as distinct from
+  `reverted`, the person undoing their edits.
 - The console history reports what the person does to a data file in the
   GUI editor: `modified` when the buffer first differs from disk, `saved`
   when they save it (with a size-capped unified diff of what changed since

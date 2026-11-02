@@ -109,6 +109,36 @@ def guard_state(monkeypatch):
     _FakeQApplication.modal = None
 
 
+def _reload_notice(buttons=("OK",)):
+    return _FakeWidget(
+        class_name="QMessageBox",
+        title="PFC3D 7.00",
+        text="Editor file G:/run/box.dat will be reloaded.\n  (It was modifed externally)",
+        buttons=buttons,
+    )
+
+
+class TestReloadNotice:
+    def test_accepted_while_the_bridge_is_idle(self):
+        """The bridge raised it by writing the file and asking the editor to look."""
+        box = _reload_notice()
+        _FakeQApplication.modal = box
+        modal_guard._tick()
+        assert box.buttons[0].clicks == 1
+
+    def test_a_notice_with_a_choice_is_not_answered(self):
+        box = _reload_notice(buttons=("Load Changes", "Save Changes", "Do Nothing"))
+        _FakeQApplication.modal = box
+        modal_guard._tick()
+        assert [b.clicks for b in box.buttons] == [0, 0, 0]
+
+    def test_other_boxes_stay_untouched_when_idle(self):
+        box = _error_box()
+        _FakeQApplication.modal = box
+        modal_guard._tick()
+        assert box.buttons[0].clicks == 0
+
+
 class TestCommandWindow:
     def test_idle_bridge_never_touches_a_dialog(self):
         """A box raised while the bridge is idle belongs to the person at

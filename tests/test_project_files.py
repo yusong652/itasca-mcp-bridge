@@ -369,6 +369,25 @@ def test_a_missing_file_is_not_registered(tmp_path):
     assert gui.editor.calls == []
 
 
+def test_refresh_editors_queues_the_foreground_check():
+    gui, registrar = _registrar("9.x")
+    invoked = []
+    gui_core = registrar._core
+    gui_core.QMetaObject.invokeMethod = lambda obj, method, kind, *a: invoked.append((obj, method, kind)) or True
+
+    assert registrar.refresh_editors() is True
+    assert invoked == [(gui.editor, "onApplicationActivated", 2)]  # queued, on the EditorModule
+
+
+def test_refresh_editors_waits_while_a_task_executes(monkeypatch):
+    gui, registrar = _registrar("9.x")
+    monkeypatch.setattr(project_files, "_get_registrar", lambda: registrar)
+    monkeypatch.setattr(project_files, "_task_executing", lambda: True)
+    registrar.refresh_editors = lambda: (_ for _ in ()).throw(AssertionError("must not be called"))
+
+    project_files.refresh_editors()  # returns quietly
+
+
 def test_module_register_never_raises(monkeypatch, tmp_path):
     monkeypatch.setattr(project_files, "_get_registrar", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
     assert project_files.register(str(tmp_path / "x.dat")) is False

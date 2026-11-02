@@ -369,6 +369,51 @@ class _Registrar(object):
         helper = self._helper
         if helper is None:
             helper = self._helper = _make_helper(core)
+
+        def connect(editor):
+            for name, slot in (("open_file", OPEN_SLOT), ("close_file", CLOSE_SLOT)):
+                try:
+                    ok = core.QObject.connect(
+                        helper, core.SIGNAL(_HELPER_SIGNALS[name]), editor, core.SLOT(slot),
+                        core.Qt.QueuedConnection,
+                    )
+                except Exception as e:
+                    logger.debug("connect to %s failed: %s", slot, e)
+                    return False
+                if not ok:
+                    return False
+            return True
+
+        if self._with_editor_module(connect):
+            self._editor_connected = True
+            return True
+        return False
+
+    def refresh_editors(self):
+        # type: () -> bool
+        """Queue the editor module's foreground check (see ``refresh_editors``)."""
+        core = self._core
+
+        def queue_check(editor):
+            try:
+                return bool(core.QMetaObject.invokeMethod(editor, "onApplicationActivated", core.Qt.QueuedConnection))
+            except Exception as e:
+                logger.debug("onApplicationActivated could not be queued: %s", e)
+                return False
+
+        return self._with_editor_module(queue_check)
+
+    def _with_editor_module(self, fn):
+        # type: (object) -> bool
+        """Call ``fn(editor_module)`` and return its result; False when not found.
+
+        The module is found through the main window and used before the
+        call returns: PySide2 declares a child's wrapper dead as soon as
+        the parent's wrapper it was found through is collected, so the
+        editor cannot be handed out of the scope that holds the window.
+        Nothing is kept (see the module docstring).
+        """
+        core = self._core
         try:
             windows = self._widgets.QApplication.topLevelWidgets()
         except Exception:
@@ -386,21 +431,8 @@ class _Registrar(object):
                 except Exception:
                     continue
             for child in children:
-                if class_name(child) != EDITOR_MODULE_CLASS:
-                    continue
-                for name, slot in (("open_file", OPEN_SLOT), ("close_file", CLOSE_SLOT)):
-                    try:
-                        ok = core.QObject.connect(
-                            helper, core.SIGNAL(_HELPER_SIGNALS[name]), child, core.SLOT(slot),
-                            core.Qt.QueuedConnection,
-                        )
-                    except Exception as e:
-                        logger.debug("connect to %s failed: %s", slot, e)
-                        return False
-                    if not ok:
-                        return False
-                self._editor_connected = True
-                return True
+                if class_name(child) == EDITOR_MODULE_CLASS:
+                    return bool(fn(child))
         return False
 
     def _emit(self, name, *args):
@@ -465,6 +497,28 @@ def flush_deferred():
             registrar.flush_deferred()
     except Exception as e:
         logger.debug("Deferred data file registration failed: %s", e)
+
+
+def refresh_editors():
+    """Have the GUI's editors take in files changed on disk. Never raises.
+
+    The editor checks its files against disk when the application comes to
+    the foreground: a clean buffer is reloaded, one with unsaved edits
+    gets the Load / Save / Do Nothing dialog. The bridge's code changes
+    files while the person may be looking at them in the GUI, with no
+    window switch to trigger that check, so the check is asked for after
+    the bridge's code has run: ``EditorModule.onApplicationActivated()``,
+    queued like everything else here (measured on PFC 7.0). Not while a
+    task is executing, for the same reason as ``register``.
+    """
+    try:
+        if _task_executing():
+            return
+        registrar = _get_registrar()
+        if registrar is not None:
+            registrar.refresh_editors()
+    except Exception as e:
+        logger.debug("Editor refresh skipped: %s", e)
 
 
 def _make_helper(core):

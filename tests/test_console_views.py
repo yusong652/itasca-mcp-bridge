@@ -785,7 +785,26 @@ def test_save_without_a_baseline_has_no_diff(gui, history, tmp_path):
     assert _entries(history) == [("view", "script", {"kind": "data_file", "event": "saved", "path": path})]
 
 
-def test_discarding_edits_is_reported_as_reverted(gui, history, tmp_path):
+def test_discarding_edits_is_reported_as_reverted(gui, history, tmp_path, monkeypatch):
+    script = tmp_path / "script.dat"
+    script.write_text("model new\n")
+    path = str(script).replace("\\", "/")
+    editor = _editor_with_notices(gui, "script")
+    _install(gui, history)
+    _entries(history)
+    clock = [1000.0]
+    monkeypatch.setattr(views_module.time, "time", lambda: clock[0])
+
+    editor.page.modifiedNotice.emit(path, "Edit")
+    clock[0] += 3.0  # typed, thought about it, undid it
+    editor.page.noLongerModifiedNotice.emit(path, "Edit")
+    _Timer.flush()
+
+    assert [e[2]["event"] for e in _entries(history)] == ["modified", "reverted"]
+
+
+def test_a_clean_right_after_modified_is_a_reload_not_a_revert(gui, history, tmp_path, monkeypatch):
+    # The editor loading the file from disk sends modified then clean within one pass.
     script = tmp_path / "script.dat"
     script.write_text("model new\n")
     path = str(script).replace("\\", "/")
@@ -796,7 +815,15 @@ def test_discarding_edits_is_reported_as_reverted(gui, history, tmp_path):
     editor.page.modifiedNotice.emit(path, "Edit")
     editor.page.noLongerModifiedNotice.emit(path, "Edit")
     _Timer.flush()
+    assert [e[2]["event"] for e in _entries(history)] == ["modified", "reloaded"]
 
+    # A person typing and undoing takes longer than that.
+    clock = [1000.0]
+    monkeypatch.setattr(views_module.time, "time", lambda: clock[0])
+    editor.page.modifiedNotice.emit(path, "Edit")
+    clock[0] += 5.0
+    editor.page.noLongerModifiedNotice.emit(path, "Edit")
+    _Timer.flush()
     assert [e[2]["event"] for e in _entries(history)] == ["modified", "reverted"]
 
 
