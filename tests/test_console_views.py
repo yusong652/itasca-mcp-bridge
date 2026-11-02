@@ -752,6 +752,25 @@ def test_edit_and_save_report_the_diff(gui, history, tmp_path):
     ]
 
 
+def test_modified_announced_twice_is_one_edit_from_the_first_baseline(gui, history, tmp_path):
+    script = tmp_path / "script.dat"
+    script.write_text("model new\n")
+    path = str(script).replace("\\", "/")
+    editor = _editor_with_notices(gui, "script")
+    _install(gui, history)
+    _entries(history)
+
+    editor.page.modifiedNotice.emit(path, "Edit")
+    script.write_text("model new\nmodel cycle 10\n")  # someone else wrote the file meanwhile
+    editor.page.modifiedNotice.emit(path, "Edit")
+    script.write_text("model new\nmodel cycle 10\nmodel save 'a'\n")
+    _save(editor, path)
+
+    events = _entries(history)
+    assert [e[2]["event"] for e in events] == ["modified", "saved"]
+    assert events[1][2]["diff"] == "@@ -1 +1,3 @@\n model new\n+model cycle 10\n+model save 'a'"
+
+
 def test_save_without_a_baseline_has_no_diff(gui, history, tmp_path):
     # Editing began before the bridge was watching: nothing to compare with.
     script = tmp_path / "script.dat"

@@ -742,6 +742,10 @@ class ViewTracker(object):
         try:
             path = str(path)
             self._clean_pending.discard(path)
+            if path in self._baselines:
+                # Announced again mid-edit (seen on 9.8): the person is still
+                # editing from the same starting point, nothing new to say.
+                return
             self._baselines[path] = read_text(path)
             self._record_file(path, {"kind": KIND_DATA_FILE, "event": EVENT_MODIFIED})
         except Exception as e:
