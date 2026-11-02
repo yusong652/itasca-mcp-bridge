@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.8] - 2026-11-03
+
 ### Fixed
 - A data file's `saved` entry arrived several times for one save on
   PFC 6.0 / 7.0 (3, then 7, then 12 times as the session went on), and
