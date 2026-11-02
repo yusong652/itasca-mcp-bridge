@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- The files the bridge runs are listed in the GUI project's Data Files,
+  as a `program call` typed at the product's prompt would list them: a
+  data file the bridge expands, and the Python script of every task once
+  the task is over. The file shows as closed in the Project pane and can
+  be opened or rerun from there; a file already listed (one the person
+  may have open) is left alone, and the view in front stays in front.
 - The console history reports what the person does to a data file in the
   GUI editor: `modified` when the buffer first differs from disk, `saved`
   when they save it (with a size-capped unified diff of what changed since

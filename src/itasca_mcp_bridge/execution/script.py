@@ -86,6 +86,12 @@ class ScriptRunner:
         # empty and the script's first `model cycle` wedges the bridge.
         ensure_cycle_callbacks()
 
+        # The script is the agent's work the person may want to open or
+        # rerun: it is listed in the GUI project's Data Files once the task
+        # is over and the GUI idle again (see console.project_files).
+        from ..console.project_files import flush_deferred as flush_data_files
+        from ..console.project_files import register as register_data_file
+
         # Plots the script opens reach the client's next read (see
         # console.views); never raises.
         from ..console.views import after_bridge_code
@@ -105,6 +111,8 @@ class ScriptRunner:
             # Clear current task and interrupt flag
             clear_current_task()
             clear_interrupt(task_id)
+            register_data_file(script_path, force=True)
+            flush_data_files()
 
         capture = []  # the engine-console capture, once entered
 

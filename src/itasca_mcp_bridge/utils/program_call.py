@@ -254,6 +254,7 @@ def expand_program_call(cmd, run):
     lines = _select_lines(text.splitlines(), parsed)
     if lines is None:
         return False
+    _register_in_project(path)
 
     # Comments are kept so the file's own stage markers ("; --- loading")
     # still show up in the task log where the engine would have echoed them.
@@ -287,6 +288,25 @@ def expand_program_call(cmd, run):
             # Drop the emptied stack so finished contexts do not accumulate.
             _dir_stacks.pop(context, None)
     return True
+
+
+def _register_in_project(path):
+    # type: (str) -> None
+    """List the file in the GUI project, as the engine's own call would have.
+
+    Not from inside a cycle callback (the GUI is not touched there), and
+    never a reason for the call itself to fail.
+    """
+    try:
+        from ..signals.cycle_executor import in_cycle_callback
+
+        if in_cycle_callback():
+            return
+        from ..console.project_files import register
+
+        register(path)
+    except Exception as e:
+        logger.debug("program call: project registration skipped: %s", e)
 
 
 def _echo(line):
