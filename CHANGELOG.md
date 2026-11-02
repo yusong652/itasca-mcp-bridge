@@ -6,6 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- The console history reports what the person does to a data file in the
+  GUI editor: `modified` when the buffer first differs from disk, `saved`
+  when they save it (with a size-capped unified diff of what changed since
+  they began editing, and the file's path), `reverted` when the edits are
+  discarded or the file reloaded from disk. A client that writes files the
+  person may be editing can now tell when to hold off and when to re-read.
+
+### Fixed
+- A data file with unsaved edits is no longer reported as renamed to
+  `name*` and back: the editor's modified marker is stripped from view
+  names.
+
 ## [0.6.6] - 2026-11-01
 
 ### Fixed

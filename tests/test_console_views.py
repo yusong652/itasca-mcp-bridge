@@ -709,3 +709,115 @@ def test_execute_is_not_recorded_after_uninstall(editor_gui, history):
     gui.execute.triggered.emit(False)
 
     assert _entries(history) == []
+
+
+# ---------------------------------------------------------------------------
+# Editing a data file
+# ---------------------------------------------------------------------------
+
+
+def _editor_with_notices(gui, title):
+    """An editor page announcing its buffer like the product's does."""
+    editor = gui.view("data_file", title)
+    for name in ("modifiedNotice", "noLongerModifiedNotice", "saveNotice", "closeNotice"):
+        setattr(editor.page, name, _Signal())
+    return editor
+
+
+def _save(editor, path):
+    # The product: clean first, then the save notice, in the same instant.
+    editor.page.noLongerModifiedNotice.emit(path, "Edit")
+    editor.page.saveNotice.emit(path, "Edit")
+    _Timer.flush()
+
+
+def test_edit_and_save_report_the_diff(gui, history, tmp_path):
+    script = tmp_path / "script.dat"
+    script.write_text("model new\nmodel cycle 10\n")
+    path = str(script).replace("\\", "/")
+    editor = _editor_with_notices(gui, "script")
+    _install(gui, history)
+    _entries(history)
+
+    editor.page.modifiedNotice.emit(path, "Edit")
+    script.write_text("model new\nmodel cycle 100\nmodel save 'a'\n")
+    _save(editor, path)
+
+    assert _entries(history) == [
+        ("view", "script", {"kind": "data_file", "event": "modified", "path": path}),
+        ("view", "script", {
+            "kind": "data_file", "event": "saved", "path": path,
+            "diff": "@@ -1,2 +1,3 @@\n model new\n-model cycle 10\n+model cycle 100\n+model save 'a'",
+        }),
+    ]
+
+
+def test_save_without_a_baseline_has_no_diff(gui, history, tmp_path):
+    # Editing began before the bridge was watching: nothing to compare with.
+    script = tmp_path / "script.dat"
+    script.write_text("model new\n")
+    path = str(script).replace("\\", "/")
+    editor = _editor_with_notices(gui, "script")
+    _install(gui, history)
+    _entries(history)
+
+    _save(editor, path)
+
+    assert _entries(history) == [("view", "script", {"kind": "data_file", "event": "saved", "path": path})]
+
+
+def test_discarding_edits_is_reported_as_reverted(gui, history, tmp_path):
+    script = tmp_path / "script.dat"
+    script.write_text("model new\n")
+    path = str(script).replace("\\", "/")
+    editor = _editor_with_notices(gui, "script")
+    _install(gui, history)
+    _entries(history)
+
+    editor.page.modifiedNotice.emit(path, "Edit")
+    editor.page.noLongerModifiedNotice.emit(path, "Edit")
+    _Timer.flush()
+
+    assert [e[2]["event"] for e in _entries(history)] == ["modified", "reverted"]
+
+
+def test_a_large_diff_is_truncated(gui, history, tmp_path):
+    script = tmp_path / "script.dat"
+    script.write_text("".join(f"line {i}\n" for i in range(200)))
+    path = str(script).replace("\\", "/")
+    editor = _editor_with_notices(gui, "script")
+    _install(gui, history)
+    _entries(history)
+
+    editor.page.modifiedNotice.emit(path, "Edit")
+    script.write_text("".join(f"changed {i}\n" for i in range(200)))
+    _save(editor, path)
+
+    saved = _entries(history)[-1][2]
+    assert saved["truncated"] is True
+    assert len(saved["diff"].splitlines()) <= views_module.MAX_DIFF_LINES + 1
+    assert saved["diff"].endswith("more lines]")
+
+
+def test_modified_marker_in_the_title_is_not_a_rename(gui, history):
+    editor = gui.view("data_file", "script")
+    _install(gui, history)
+    _entries(history)
+
+    editor.dock.title = "script*"
+    gui.focus_on(editor.body)
+
+    assert [e[2]["event"] for e in _entries(history)] == ["active"]
+
+
+def test_edits_are_not_recorded_after_uninstall(gui, history, tmp_path):
+    path = str(tmp_path / "script.dat").replace("\\", "/")
+    editor = _editor_with_notices(gui, "script")
+    tracker = _install(gui, history)
+    _entries(history)
+
+    tracker.uninstall()
+    editor.page.modifiedNotice.emit(path, "Edit")
+    _save(editor, path)
+
+    assert _entries(history) == []
