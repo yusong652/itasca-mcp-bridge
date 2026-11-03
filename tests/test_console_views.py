@@ -98,11 +98,24 @@ class _Widget(_Properties):
         super().__init__()
         self._cls = cls
         self._parent = parent
+        self._kids = []
+        if parent is not None:
+            parent._kids.append(self)
         self.title = title
         self.visible = visible
 
     def metaObject(self):
         return _Meta(self._cls)
+
+    def inherits(self, name):
+        return False
+
+    def findChildren(self, cls):
+        found = []
+        for kid in self._kids:
+            found.append(kid)
+            found.extend(kid.findChildren(cls))
+        return found
 
     def parentWidget(self):
         return self._parent
@@ -120,6 +133,24 @@ class _Widget(_Properties):
 
     def isVisible(self):
         return self.visible
+
+
+class _Editor(_Widget):
+    """The editor's Scintilla text widget: its selection is read through inputMethodQuery."""
+
+    def __init__(self, parent):
+        super().__init__("itasca3d::DataTextEdit", parent=parent)
+        self.selection = ""
+        self.dead = False  # a wrapper the binding declared dead
+
+    def inherits(self, name):
+        return name == "ScintillaEditBase"
+
+    def inputMethodQuery(self, query):
+        if self.dead:
+            raise RuntimeError("Internal C++ object already deleted.")
+        assert query == "ImCurrentSelection"
+        return self.selection
 
 
 class _Item:
@@ -185,18 +216,20 @@ class _Gui:
         self.core = SimpleNamespace(
             QTimer=_Timer,
             QCoreApplication=SimpleNamespace(instance=lambda: gui.app),
+            Qt=SimpleNamespace(ImCurrentSelection="ImCurrentSelection", ControlModifier=4),
         )
         self.qt_widgets = SimpleNamespace(
             QApplication=SimpleNamespace(
                 allWidgets=lambda: list(gui.widgets),
                 focusWidget=lambda: gui.focus,
-            )
+            ),
+            QWidget=object,
         )
 
     def view(self, kind, title, visible=True):
         dock = _Widget("itascaxd::ItascaDockWidget", title=title, visible=visible)
         page = _Widget("itasca3d::PlotPage" if kind == "plot" else "itasca3d::EditorPage", parent=dock)
-        body = _Widget("itasca3d::PlotDisplay" if kind == "plot" else "itasca3d::DataTextEdit", parent=page)
+        body = _Widget("itasca3d::PlotDisplay", parent=page) if kind == "plot" else _Editor(page)
         self.widgets += [dock, page, body]
         return SimpleNamespace(dock=dock, page=page, body=body)
 
@@ -653,7 +686,6 @@ def editor_gui(gui):
     gui.qt_widgets.QShortcut = _Shortcut
     gui.qt_widgets.QApplication.topLevelWidgets = lambda: [window]
     gui.qt_widgets.QApplication.keyboardModifiers = lambda: gui.modifiers
-    gui.core.Qt = SimpleNamespace(ControlModifier=4)
     return gui
 
 
@@ -746,20 +778,31 @@ def _save(editor, path):
     _Timer.flush()
 
 
-def test_edit_and_save_report_the_diff(gui, history, tmp_path):
+def _read(tracker, history):
+    """What the client gets on a read: the saves so far, then the entries."""
+    tracker.report_saves()
+    return _entries(history)
+
+
+def _script(tmp_path, text):
     script = tmp_path / "script.dat"
-    script.write_text("model new\nmodel cycle 10\n")
-    path = str(script).replace("\\", "/")
+    script.write_text(text)
+    return script, str(script).replace("\\", "/")
+
+
+def test_typing_is_not_an_event_and_the_save_carries_the_diff(gui, history, tmp_path):
+    script, path = _script(tmp_path, "model new\nmodel cycle 10\n")
     editor = _editor_with_notices(gui, "script")
-    _install(gui, history)
+    tracker = _install(gui, history)
     _entries(history)
 
     editor.page.modifiedNotice.emit(path, "Edit")
+    assert _read(tracker, history) == []
+
     script.write_text("model new\nmodel cycle 100\nmodel save 'a'\n")
     _save(editor, path)
 
-    assert _entries(history) == [
-        ("view", "script", {"kind": "data_file", "event": "modified", "path": path}),
+    assert _read(tracker, history) == [
         ("view", "script", {
             "kind": "data_file", "event": "saved", "path": path,
             "diff": "@@ -1,2 +1,3 @@\n model new\n-model cycle 10\n+model cycle 100\n+model save 'a'",
@@ -768,11 +811,9 @@ def test_edit_and_save_report_the_diff(gui, history, tmp_path):
 
 
 def test_modified_announced_twice_is_one_edit_from_the_first_baseline(gui, history, tmp_path):
-    script = tmp_path / "script.dat"
-    script.write_text("model new\n")
-    path = str(script).replace("\\", "/")
+    script, path = _script(tmp_path, "model new\n")
     editor = _editor_with_notices(gui, "script")
-    _install(gui, history)
+    tracker = _install(gui, history)
     _entries(history)
 
     editor.page.modifiedNotice.emit(path, "Edit")
@@ -781,80 +822,105 @@ def test_modified_announced_twice_is_one_edit_from_the_first_baseline(gui, histo
     script.write_text("model new\nmodel cycle 10\nmodel save 'a'\n")
     _save(editor, path)
 
-    events = _entries(history)
-    assert [e[2]["event"] for e in events] == ["modified", "saved"]
-    assert events[1][2]["diff"] == "@@ -1 +1,3 @@\n model new\n+model cycle 10\n+model save 'a'"
+    events = _read(tracker, history)
+    assert [e[2]["event"] for e in events] == ["saved"]
+    assert events[0][2]["diff"] == "@@ -1 +1,3 @@\n model new\n+model cycle 10\n+model save 'a'"
 
 
 def test_save_without_a_baseline_has_no_diff(gui, history, tmp_path):
     # Editing began before the bridge was watching: nothing to compare with.
-    script = tmp_path / "script.dat"
-    script.write_text("model new\n")
-    path = str(script).replace("\\", "/")
+    script, path = _script(tmp_path, "model new\n")
     editor = _editor_with_notices(gui, "script")
-    _install(gui, history)
+    tracker = _install(gui, history)
     _entries(history)
 
     _save(editor, path)
 
-    assert _entries(history) == [("view", "script", {"kind": "data_file", "event": "saved", "path": path})]
+    assert _read(tracker, history) == [("view", "script", {"kind": "data_file", "event": "saved", "path": path})]
 
 
-def test_discarding_edits_is_reported_as_reverted(gui, history, tmp_path, monkeypatch):
-    script = tmp_path / "script.dat"
-    script.write_text("model new\n")
-    path = str(script).replace("\\", "/")
+def test_saves_between_two_reads_are_one_entry_with_the_combined_diff(gui, history, tmp_path):
+    # Ctrl+S twice, or PFC 6.0 saving the project (open buffers included) on its own.
+    script, path = _script(tmp_path, "model new\n")
     editor = _editor_with_notices(gui, "script")
-    _install(gui, history)
+    tracker = _install(gui, history)
     _entries(history)
-    clock = [1000.0]
-    monkeypatch.setattr(views_module.time, "time", lambda: clock[0])
 
     editor.page.modifiedNotice.emit(path, "Edit")
-    clock[0] += 3.0  # typed, thought about it, undid it
+    script.write_text("model new\nmodel cycle 10\n")
+    _save(editor, path)
+    script.write_text("model new\nmodel cycle 100\n")
+    _save(editor, path)
+
+    assert _read(tracker, history) == [
+        ("view", "script", {
+            "kind": "data_file", "event": "saved", "path": path, "saves": 2,
+            "diff": "@@ -1 +1,2 @@\n model new\n+model cycle 100",
+        }),
+    ]
+
+
+def test_the_next_save_diffs_from_what_the_client_last_saw(gui, history, tmp_path):
+    script, path = _script(tmp_path, "model new\n")
+    editor = _editor_with_notices(gui, "script")
+    tracker = _install(gui, history)
+    _entries(history)
+
+    editor.page.modifiedNotice.emit(path, "Edit")
+    script.write_text("model new\nmodel cycle 10\n")
+    _save(editor, path)
+    assert _read(tracker, history)[0][2]["diff"] == "@@ -1 +1,2 @@\n model new\n+model cycle 10"
+
+    editor.page.modifiedNotice.emit(path, "Edit")
+    script.write_text("model new\nmodel cycle 10\nmodel save 'a'\n")
+    _save(editor, path)
+    assert _read(tracker, history)[0][2]["diff"] == "@@ -1,2 +1,3 @@\n model new\n model cycle 10\n+model save 'a'"
+
+
+def test_typing_and_undoing_leaves_no_trace(gui, history, tmp_path):
+    script, path = _script(tmp_path, "model new\n")
+    editor = _editor_with_notices(gui, "script")
+    tracker = _install(gui, history)
+    _entries(history)
+
+    editor.page.modifiedNotice.emit(path, "Edit")
     editor.page.noLongerModifiedNotice.emit(path, "Edit")
     _Timer.flush()
 
-    assert [e[2]["event"] for e in _entries(history)] == ["modified", "reverted"]
+    assert _read(tracker, history) == []
+    assert tracker._baselines == {}
 
 
-def test_a_clean_right_after_modified_is_a_reload_not_a_revert(gui, history, tmp_path, monkeypatch):
+def test_a_reload_from_disk_is_no_event_and_the_next_edit_starts_from_the_new_text(gui, history, tmp_path):
     # The editor loading the file from disk sends modified then clean within one pass.
-    script = tmp_path / "script.dat"
-    script.write_text("model new\n")
-    path = str(script).replace("\\", "/")
+    script, path = _script(tmp_path, "model new\n")
     editor = _editor_with_notices(gui, "script")
-    _install(gui, history)
+    tracker = _install(gui, history)
     _entries(history)
 
+    script.write_text("model new\nmodel cycle 10\n")  # the agent wrote it
     editor.page.modifiedNotice.emit(path, "Edit")
     editor.page.noLongerModifiedNotice.emit(path, "Edit")
     _Timer.flush()
-    assert [e[2]["event"] for e in _entries(history)] == ["modified", "reloaded"]
+    assert _read(tracker, history) == []
 
-    # A person typing and undoing takes longer than that.
-    clock = [1000.0]
-    monkeypatch.setattr(views_module.time, "time", lambda: clock[0])
     editor.page.modifiedNotice.emit(path, "Edit")
-    clock[0] += 5.0
-    editor.page.noLongerModifiedNotice.emit(path, "Edit")
-    _Timer.flush()
-    assert [e[2]["event"] for e in _entries(history)] == ["modified", "reverted"]
+    script.write_text("model new\nmodel cycle 10\nmodel save 'a'\n")
+    _save(editor, path)
+    assert _read(tracker, history)[0][2]["diff"] == "@@ -1,2 +1,3 @@\n model new\n model cycle 10\n+model save 'a'"
 
 
 def test_a_large_diff_is_truncated(gui, history, tmp_path):
-    script = tmp_path / "script.dat"
-    script.write_text("".join(f"line {i}\n" for i in range(200)))
-    path = str(script).replace("\\", "/")
+    script, path = _script(tmp_path, "".join(f"line {i}\n" for i in range(200)))
     editor = _editor_with_notices(gui, "script")
-    _install(gui, history)
+    tracker = _install(gui, history)
     _entries(history)
 
     editor.page.modifiedNotice.emit(path, "Edit")
     script.write_text("".join(f"changed {i}\n" for i in range(200)))
     _save(editor, path)
 
-    saved = _entries(history)[-1][2]
+    saved = _read(tracker, history)[-1][2]
     assert saved["truncated"] is True
     assert len(saved["diff"].splitlines()) <= views_module.MAX_DIFF_LINES + 1
     assert saved["diff"].endswith("more lines]")
@@ -881,7 +947,143 @@ def test_edits_are_not_recorded_after_uninstall(gui, history, tmp_path):
     editor.page.modifiedNotice.emit(path, "Edit")
     _save(editor, path)
 
-    assert _entries(history) == []
+    assert _read(tracker, history) == []
+
+
+# ---------------------------------------------------------------------------
+# What the person is doing right now
+# ---------------------------------------------------------------------------
+
+
+def test_state_is_empty_when_nothing_is_going_on(gui, history):
+    gui.view("data_file", "script")
+    gui.view("plot", "Plot01")
+    tracker = _install(gui, history)
+
+    assert tracker.state() == {}
+
+
+def test_state_names_the_files_with_unsaved_edits(gui, history):
+    a = gui.view("data_file", "a")
+    gui.view("data_file", "b")
+    gui.view("plot", "Plot01")
+    tracker = _install(gui, history)
+
+    a.dock.title = "a*"
+
+    assert tracker.state() == {"unsaved": ["a"]}
+
+
+def test_state_carries_the_selection_in_the_editor_in_front(gui, history):
+    a = gui.view("data_file", "a")
+    b = gui.view("data_file", "b")
+    tracker = _install(gui, history)
+    a.body.selection = "ball create"
+    b.body.selection = "model cycle 10"
+
+    gui.focus_on(b.body)
+    assert tracker.state() == {"selection": {"name": "b", "text": "model cycle 10"}}
+
+    # The person went to the console: the editor they were in is still the one in front.
+    gui.focus_on(None)
+    assert tracker.state() == {"selection": {"name": "b", "text": "model cycle 10"}}
+
+
+def test_a_selection_in_another_editor_counts_when_the_one_in_front_has_none(gui, history):
+    a = gui.view("data_file", "a")
+    b = gui.view("data_file", "b")
+    tracker = _install(gui, history)
+    b.body.selection = "model cycle 10"
+
+    gui.focus_on(a.body)
+
+    assert tracker.state()["selection"] == {"name": "b", "text": "model cycle 10"}
+
+
+def test_a_long_selection_is_cut(gui, history):
+    a = gui.view("data_file", "a")
+    tracker = _install(gui, history)
+    a.body.selection = "x" * (views_module.MAX_SELECTION_CHARS + 1)
+
+    selection = tracker.state()["selection"]
+
+    assert selection["truncated"] is True
+    assert len(selection["text"]) == views_module.MAX_SELECTION_CHARS
+
+
+def test_an_editor_whose_wrapper_died_is_found_again(gui, history):
+    # PySide2 5.11: the text widget's wrapper is declared dead, the widget lives on.
+    a = gui.view("data_file", "a")
+    tracker = _install(gui, history)
+    a.body.selection = "model cycle 10"
+    assert tracker.state()["selection"]["text"] == "model cycle 10"
+
+    alive = _rewrap(a.body)
+    a.page._kids[a.page._kids.index(a.body)] = alive
+    a.body.dead = True
+    alive.selection = "model cycle 100"
+
+    assert tracker.state()["selection"]["text"] == "model cycle 100"
+
+
+def test_state_is_empty_after_uninstall(gui, history):
+    a = gui.view("data_file", "a")
+    tracker = _install(gui, history)
+    a.body.selection = "model cycle 10"
+    a.dock.title = "a*"
+
+    tracker.uninstall()
+
+    assert tracker.state() == {}
+
+
+class _Executor:
+    """The main-thread queue: runs what it is given when told to, like the pump."""
+
+    def __init__(self):
+        self.queued = []
+
+    def submit(self, func):
+        from concurrent.futures import Future
+
+        future = Future()
+        self.queued.append((func, future))
+        return future
+
+    def pump(self):
+        for func, future in self.queued:
+            if future.set_running_or_notify_cancel():
+                future.set_result(func())
+        self.queued = []
+
+
+def test_module_state_is_read_on_the_gui_thread(gui, history, installed):
+    a = gui.view("data_file", "a")
+    installed.look()
+    a.body.selection = "model cycle 10"
+    executor = _Executor()
+    import threading
+
+    result = []
+    reader = threading.Thread(target=lambda: result.append(views_module.state(executor)))
+    reader.start()
+    while not executor.queued:
+        pass
+    executor.pump()
+    reader.join()
+
+    assert result == [{"selection": {"name": "a", "text": "model cycle 10"}}]
+
+
+def test_module_state_gives_up_when_the_gui_thread_is_held(gui, history, installed):
+    executor = _Executor()
+
+    assert views_module.state(executor, timeout=0.01) == {}
+    assert executor.queued[0][1].cancelled()
+
+
+def test_module_state_without_a_tracker_is_empty():
+    assert views_module.state(_Executor()) == {}
 
 
 # ---------------------------------------------------------------------------
@@ -916,7 +1118,7 @@ def test_a_page_seen_through_a_new_wrapper_is_not_hooked_again(gui, history, tmp
     script.write_text("model new\nmodel cycle 10\n")
     _save(editor, path)
 
-    assert [e[2]["event"] for e in _entries(history)] == ["modified", "saved"]
+    assert [e[2]["event"] for e in _read(tracker, history)] == ["saved"]
     assert len(editor.page.saveNotice.slots) == 1
 
 

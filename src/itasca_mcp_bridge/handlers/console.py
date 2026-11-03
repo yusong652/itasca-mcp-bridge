@@ -3,6 +3,8 @@
 
 import logging
 
+from ..console import views
+
 logger = logging.getLogger("itasca-mcp-bridge")
 
 
@@ -11,7 +13,10 @@ def handle_console_history(ctx, data):
 
     Request: ``{"limit": <int, default 20>}``. Response ``data`` carries
     ``entries`` (oldest first, at most ``limit`` and the newest of those),
-    ``cursor`` (id of the last delivered entry) and ``has_more``.
+    ``cursor`` (id of the last delivered entry), ``has_more``, and
+    ``state`` when there is any: what the person is doing in the GUI's
+    editors right now (``unsaved`` data files, the ``selection``), read
+    on the GUI thread for this call.
     """
     request_id = data.get("request_id", "unknown")
     history = getattr(ctx, "console_history", None)
@@ -29,7 +34,12 @@ def handle_console_history(ctx, data):
             "data": None,
         }
 
+    # The files saved since the last read go in first, so this read has them.
+    views.report_saves()
     result = history.consume(limit=data.get("limit", 20))
+    state = views.state(getattr(ctx, "main_executor", None))
+    if state:
+        result["state"] = state
     return {
         "type": "console_history_result",
         "request_id": request_id,

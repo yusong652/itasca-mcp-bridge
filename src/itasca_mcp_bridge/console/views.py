@@ -90,25 +90,38 @@ Editing a data file (measured on PFC 7.0)
     file's full path: ``modifiedNotice`` on the first keystroke that makes
     the buffer differ from disk, then ``noLongerModifiedNotice`` and
     ``saveNotice`` back to back on a save -- or ``noLongerModifiedNotice``
-    alone when the edits are discarded or the file reloaded from disk. Those
-    are recorded as ``modified``, ``saved`` and ``reverted`` entries, so
-    the client knows when the person has unsaved work in a file (and had
-    better not write that file itself) and when the file on disk changed
-    under its feet. The GUI shows a modified buffer by a ``*`` after the
-    dock's title; that is stripped from names, not reported as a rename.
+    alone when the edits are discarded or the file reloaded from disk
+    (the reload sends modified and clean within one event-loop pass).
+    Only the save is recorded, as a ``saved`` entry: the file on disk
+    changed, and the client would not know otherwise. Typing, undoing and
+    reloading are the buffer's business; what the client needs of them is
+    the state below, not a history of keystrokes. The GUI shows a modified
+    buffer by a ``*`` after the dock's title; that is stripped from names,
+    not reported as a rename.
 
-    Loading the file from disk -- the editor's answer to an external
-    change, the person's or the GUI's own -- sends the same two notices
-    as typing and undoing, modified then clean, but within one event-loop
-    pass; a clean that follows its modified that closely is recorded as
-    ``reloaded``, not ``reverted``.
+    A ``saved`` entry carries the diff of what the person changed, and is
+    written when the client asks (``report_saves``), not when the person
+    saves: the file is read when the buffer turns modified (what they
+    started from) and again at the client's read, and the two are
+    compared, so several saves of one file between two reads are one entry
+    with their combined diff (PFC 6.0 saves the project, open buffers
+    included, every few minutes on its own). After the read the baseline
+    is what the client saw, so the next entry's diff starts there. Capped
+    in size -- the client reads the file for the rest -- and left out when
+    the file was not readable at either end, or when the editing began
+    before the bridge was watching.
 
-    A ``saved`` entry carries the diff of what the person changed: the
-    file is read when the buffer turns modified (what they started from)
-    and again on the save, and the two are compared. Capped in size -- the
-    client reads the file for the rest -- and left out when the file was
-    not readable at either end, or when the editing began before the
-    bridge was watching.
+What the person is doing right now
+    Not a history but a state, read when the client asks (``state``, on
+    the GUI thread): which data files have unsaved edits -- the ``*`` on
+    the dock's title -- and the text selected in the editor in front. The
+    selection is asked of the editor's text widget, a Scintilla
+    ``ScintillaEditBase``, through ``inputMethodQuery``: the binding wraps
+    the widget as a plain scroll area without Scintilla's methods, but the
+    input-method query for the current selection is a ``QWidget`` virtual
+    the widget answers (measured on PFC 9.8). A selection is reported as
+    long as it stands, not when it is made: dragging one out fires the
+    editor's signals once per character.
 
 Identity
     A view or list is recognised again by holding its wrapper: the binding
@@ -140,7 +153,7 @@ Python 3.6 compatible implementation.
 import difflib
 import logging
 import os
-import time
+import threading
 
 from .history import SOURCE_COMMAND, SOURCE_PLOT_ITEM, SOURCE_PYTHON, SOURCE_VIEW
 
@@ -171,11 +184,22 @@ NOTICE_CLOSED = ("closeNotice", "closeNotice(QString,QString)")
 # object, not its Python wrapper (see Identity).
 HOOKED_PROPERTY = "_itasca_mcp_bridge_hooked"
 
-# A file read for a diff, at most; a diff reported, at most.
+# The editor's text widget, found by its Scintilla base class (the leaf
+# class is the product's own: ``DataTextEdit`` on 9.8).
+TEXT_EDIT_BASE_CLASS = "ScintillaEditBase"
+
+# A file read for a diff, at most; a diff reported, at most; a selection
+# reported, at most.
 MAX_SNAPSHOT_BYTES = 1024 * 1024
 MAX_DIFF_LINES = 80
 MAX_DIFF_CHARS = 4000
 DIFF_CONTEXT_LINES = 2
+MAX_SELECTION_CHARS = 4000
+
+# How long the client's read waits for the GUI thread to answer ``state``:
+# at once when the product is idle or cycling, never while one long
+# engine command runs.
+STATE_TIMEOUT_S = 1.0
 
 KIND_PLOT = "plot"
 KIND_DATA_FILE = "data_file"
@@ -185,14 +209,7 @@ EVENT_ACTIVE = "active"
 EVENT_CLOSED = "closed"
 EVENT_RENAMED = "renamed"
 EVENT_EXECUTED = "executed"
-EVENT_MODIFIED = "modified"
 EVENT_SAVED = "saved"
-EVENT_REVERTED = "reverted"
-EVENT_RELOADED = "reloaded"
-
-# A buffer clean again this soon after turning modified was not typed in
-# and undone by a person: the editor replaced it with the file on disk.
-RELOAD_WINDOW_S = 1.0
 
 # Module-level reference: a tracker nothing points at is collected and its
 # slots stop firing.
@@ -309,12 +326,13 @@ def unified_diff(before, after):
 
 
 class _View(object):
-    __slots__ = ("dock", "kind", "name")
+    __slots__ = ("dock", "kind", "name", "editor")
 
     def __init__(self, dock, kind, name):
         self.dock = dock
         self.kind = kind
         self.name = name
+        self.editor = None  # a data file's text widget, once looked for
 
 
 class _ItemList(object):
@@ -345,9 +363,12 @@ class ViewTracker(object):
         self._execute_action = None  # type: object
         self._shortcuts_hooked = False
         self._editor_pages = []  # type: list  # pages whose notices are hooked
-        self._baselines = {}  # type: dict  # path -> text when editing began
-        self._modified_at = {}  # type: dict  # path -> when it turned modified
+        self._baselines = {}  # type: dict  # path -> the file's text as the client last saw it
+        self._saves = {}  # type: dict  # path -> saves since the client's last read
         self._clean_pending = set()  # type: set  # paths clean again, save not yet seen
+        # The GUI thread fills _baselines and _saves; the client's read,
+        # on the server's thread, takes them.
+        self._lock = threading.Lock()
 
     # -- install -------------------------------------------------------------
 
@@ -768,18 +789,19 @@ class ViewTracker(object):
         try:
             path = str(path)
             self._clean_pending.discard(path)
-            if path in self._baselines:
-                # Announced again mid-edit (seen on 9.8): the person is still
-                # editing from the same starting point, nothing new to say.
-                return
-            self._baselines[path] = read_text(path)
-            self._modified_at[path] = time.time()
-            self._record_file(path, {"kind": KIND_DATA_FILE, "event": EVENT_MODIFIED})
+            with self._lock:
+                if path in self._baselines:
+                    # Announced again mid-edit (seen on 9.8): the person is
+                    # still editing from the same starting point.
+                    return
+            text = read_text(path)
+            with self._lock:
+                self._baselines.setdefault(path, text)
         except Exception as e:
-            logger.debug("View tracking could not record an edit: %s", e)
+            logger.debug("View tracking could not follow an edit: %s", e)
 
     def _on_clean(self, path, *args):
-        """The buffer matches disk again: a save (its notice follows at once) or a revert."""
+        """The buffer matches disk again: a save (its notice follows at once), a revert or a reload."""
         if not self._active:
             return
         try:
@@ -790,46 +812,129 @@ class ViewTracker(object):
             logger.debug("View tracking could not follow a buffer: %s", e)
 
     def _settle_clean(self, path):
+        """One pass later, no save claimed the clean: the edits are gone, and
+        with them what they started from -- unless a save is still to be
+        reported, whose diff needs it."""
         if path not in self._clean_pending:
-            return  # a save claimed it
-        self._clean_pending.discard(path)
-        self._baselines.pop(path, None)
-        modified_at = self._modified_at.pop(path, None)
-        if not self._active:
             return
-        reloaded = modified_at is not None and time.time() - modified_at < RELOAD_WINDOW_S
-        event = EVENT_RELOADED if reloaded else EVENT_REVERTED
-        self._record_file(path, {"kind": KIND_DATA_FILE, "event": event})
+        self._clean_pending.discard(path)
+        self._forget(path)
 
     def _on_saved(self, path, *args):
-        """The file on disk is now what the person wrote; report it with the diff."""
+        """The file on disk is now what the person wrote; reported at the client's next read."""
         if not self._active:
             return
         try:
             path = str(path)
             self._clean_pending.discard(path)
-            before = self._baselines.pop(path, None)
-            self._modified_at.pop(path, None)
-            data = {"kind": KIND_DATA_FILE, "event": EVENT_SAVED}
-            if before is not None:
-                after = read_text(path)
-                if after is not None:
-                    diff, truncated = unified_diff(before, after)
-                    if diff:
-                        data["diff"] = diff
-                    if truncated:
-                        data["truncated"] = True
-            self._record_file(path, data)
+            with self._lock:
+                self._saves[path] = self._saves.get(path, 0) + 1
         except Exception as e:
-            logger.debug("View tracking could not record a save: %s", e)
+            logger.debug("View tracking could not follow a save: %s", e)
 
     def _on_editor_closed(self, path, *args):
         try:
             path = str(path)
         except Exception:
             return
-        self._baselines.pop(path, None)
         self._clean_pending.discard(path)
+        self._forget(path)
+
+    def _forget(self, path):
+        with self._lock:
+            if path not in self._saves:
+                self._baselines.pop(path, None)
+
+    def report_saves(self):
+        # type: () -> None
+        """Record one ``saved`` entry per file saved since the last call.
+
+        Any thread: files and the history are read, not the GUI. The diff
+        is from the text the client last saw to the file now; afterwards
+        the file now is what it last saw.
+        """
+        with self._lock:
+            saves, self._saves = self._saves, {}
+        for path, count in saves.items():
+            with self._lock:
+                before = self._baselines.get(path)
+            after = read_text(path)
+            data = {"kind": KIND_DATA_FILE, "event": EVENT_SAVED}
+            if count > 1:
+                data["saves"] = count
+            if before is not None and after is not None:
+                diff, truncated = unified_diff(before, after)
+                if diff:
+                    data["diff"] = diff
+                if truncated:
+                    data["truncated"] = True
+            with self._lock:
+                if after is None:
+                    self._baselines.pop(path, None)
+                else:
+                    self._baselines[path] = after
+            self._record_file(path, data)
+
+    # -- what the person is doing right now ----------------------------------
+
+    def state(self):
+        # type: () -> dict
+        """The editors' state: ``unsaved`` files and the ``selection``; empty when nothing.
+
+        GUI thread only. The selection is the one in the data file in
+        front, or failing that in another open one.
+        """
+        if not self._active:
+            return {}
+        state = {}
+        front = self._view_with_focus() or self._current
+        editors = [v for v in self._views if v.kind == KIND_DATA_FILE]
+        editors.sort(key=lambda v: v is not front)
+        unsaved = [v.name for v in editors if _has_unsaved_edits(v.dock)]
+        if unsaved:
+            state["unsaved"] = unsaved
+        for view in editors:
+            selection = self._selection_in(view)
+            if selection is not None:
+                state["selection"] = selection
+                break
+        return state
+
+    def _selection_in(self, view):
+        # type: (object) -> dict
+        """The text selected in the view's editor, or None when there is none."""
+        text = None
+        for _attempt in (1, 2):
+            if view.editor is None:
+                view.editor = self._find_editor(view.dock)
+                if view.editor is None:
+                    return None
+            try:
+                text = view.editor.inputMethodQuery(_input_method_query(self._core))
+                break
+            except Exception:
+                view.editor = None  # its wrapper was declared dead (see Identity)
+        if not text:
+            return None
+        text = str(text)
+        if not text:
+            return None
+        selection = {"name": view.name}
+        if len(text) > MAX_SELECTION_CHARS:
+            text = text[:MAX_SELECTION_CHARS]
+            selection["truncated"] = True
+        selection["text"] = text
+        return selection
+
+    def _find_editor(self, dock):
+        # type: (object) -> object
+        try:
+            for widget in dock.findChildren(self._widgets.QWidget):
+                if widget.inherits(TEXT_EDIT_BASE_CLASS):
+                    return widget
+        except Exception:
+            pass
+        return None
 
     def _record_file(self, path, data):
         # type: (str, dict) -> None
@@ -913,6 +1018,24 @@ def _is_visible(widget):
         return False
 
 
+def _has_unsaved_edits(dock):
+    # type: (object) -> bool
+    """The editor's ``*`` after the dock's title."""
+    try:
+        return str(dock.windowTitle()).strip().endswith("*")
+    except Exception:
+        return False
+
+
+def _input_method_query(core):
+    """``Qt.ImCurrentSelection`` as the binding spells it."""
+    qt = core.Qt
+    value = getattr(qt, "ImCurrentSelection", None)
+    if value is None:
+        value = qt.InputMethodQuery.ImCurrentSelection
+    return value
+
+
 def _read_items(item_list):
     # type: (object) -> list
     """Top-level item names of a plot item list, or None if unreadable.
@@ -975,6 +1098,43 @@ def uninstall():
     if _tracker is not None:
         _tracker.uninstall()
         _tracker = None
+
+
+def report_saves():
+    """Record the files saved since the client's last read; never raises.
+
+    Any thread: called by the ``console_history`` handler before it hands
+    the entries over.
+    """
+    tracker = _tracker
+    if tracker is None:
+        return
+    try:
+        tracker.report_saves()
+    except Exception as e:
+        logger.debug("View tracking could not report the saves: %s", e)
+
+
+def state(main_executor, timeout=STATE_TIMEOUT_S):
+    # type: (object, float) -> dict
+    """The editors' state, read on the GUI thread; ``{}`` when there is
+    nothing to say or the GUI thread did not answer in time (one long
+    engine command holds it). Never raises.
+    """
+    tracker = _tracker
+    if tracker is None or main_executor is None:
+        return {}
+    try:
+        future = main_executor.submit(tracker.state)
+    except Exception as e:
+        logger.debug("View tracking could not ask for the GUI's state: %s", e)
+        return {}
+    try:
+        return future.result(timeout) or {}
+    except Exception as e:
+        future.cancel()
+        logger.debug("View tracking did not get the GUI's state: %s", e)
+        return {}
 
 
 def after_bridge_code():
