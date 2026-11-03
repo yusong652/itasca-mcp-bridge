@@ -6,6 +6,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.9] - 2026-11-03
+
+### Added
+- The console history answers with the editors' state at the time of the
+  read (`state`): `unsaved`, the data files whose GUI editor buffer differs
+  from disk, and `selection`, the text selected in the editor in front
+  (with the file's name; capped at 4000 characters). Read on the GUI
+  thread when the client asks, the way an IDE hands an agent the current
+  selection with each prompt; left out when the GUI thread is held by a
+  long engine command. Measured on PFC 9.8 (PySide6) and 6.0 (PySide2).
+
+### Changed
+- A data file's `saved` entry is written when the client reads, not when
+  the person saves, with the diff from the text the client last saw:
+  several saves of one file between two reads (Ctrl+S twice, PFC 6.0's
+  periodic project save) are one entry carrying `saves`, the number
+  merged.
+
+### Removed
+- The `modified`, `reverted` and `reloaded` data-file entries. They
+  reported state as events and could not do it right: the editor's reload
+  from disk sends the same notices as typing and undoing, so every reload
+  came with a false `modified`, and the 1 s window that told the two apart
+  called a quick undo a reload. `unsaved` in the state says what
+  `modified` was for.
+
 ## [0.6.8] - 2026-11-03
 
 ### Fixed
