@@ -161,11 +161,14 @@ ANNOUNCEMENTS = {
         "editor it gets the diff, and it holds off writing a file you are editing.",
     ),
     "0.6.9": (
-        "Your agent now sees what you have selected in the data file editor, and "
-        "which files you are still editing, each time it looks: select the lines "
-        "you mean and say 'this'.",
+        "Your agent now sees which data files you are still editing, each time "
+        "it looks, and tells you before writing one of them.",
         "Saving a file several times between two of its looks reaches it as one "
         "change with one diff.",
+    ),
+    "0.6.10": (
+        "What you select in the data file editor is no longer handed to your "
+        "agent (0.6.9 did, as text): point it at lines by number instead.",
     ),
 }
 
