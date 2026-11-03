@@ -6,6 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.10] - 2026-11-03
+
+### Removed
+- `selection` from the console history's `state`, added in 0.6.9 as the
+  selected text. Reporting it as the file and lines instead would have
+  rested on an inference the binding does not support -- the editor's
+  wrapper has none of the Scintilla methods that say where the selection
+  is, so the lines had to be found by searching the file on disk for the
+  text around the cursor, which fails silently on an unsaved buffer or a
+  repeated paragraph. `state` keeps `unsaved`, the data files with
+  unsaved edits.
+
 ## [0.6.9] - 2026-11-03
 
 ### Added
