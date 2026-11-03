@@ -114,14 +114,12 @@ Editing a data file (measured on PFC 7.0)
 What the person is doing right now
     Not a history but a state, read when the client asks (``state``, on
     the GUI thread): which data files have unsaved edits -- the ``*`` on
-    the dock's title -- and the text selected in the editor in front. The
-    selection is asked of the editor's text widget, a Scintilla
-    ``ScintillaEditBase``, through ``inputMethodQuery``: the binding wraps
-    the widget as a plain scroll area without Scintilla's methods, but the
-    input-method query for the current selection is a ``QWidget`` virtual
-    the widget answers (measured on PFC 9.8). A selection is reported as
-    long as it stands, not when it is made: dragging one out fires the
-    editor's signals once per character.
+    the dock's title. What they have selected in an editor is not
+    reported: the binding wraps the editor's text widget without the
+    Scintilla methods that would say where the selection is, and
+    inferring that from the text around the cursor (an input-method
+    query) by searching the file fails silently on an unsaved buffer or
+    a repeated paragraph. Not worth an inference.
 
 Identity
     A view or list is recognised again by holding its wrapper: the binding
@@ -184,17 +182,11 @@ NOTICE_CLOSED = ("closeNotice", "closeNotice(QString,QString)")
 # object, not its Python wrapper (see Identity).
 HOOKED_PROPERTY = "_itasca_mcp_bridge_hooked"
 
-# The editor's text widget, found by its Scintilla base class (the leaf
-# class is the product's own: ``DataTextEdit`` on 9.8).
-TEXT_EDIT_BASE_CLASS = "ScintillaEditBase"
-
-# A file read for a diff, at most; a diff reported, at most; a selection
-# reported, at most.
+# A file read for a diff, at most; a diff reported, at most.
 MAX_SNAPSHOT_BYTES = 1024 * 1024
 MAX_DIFF_LINES = 80
 MAX_DIFF_CHARS = 4000
 DIFF_CONTEXT_LINES = 2
-MAX_SELECTION_CHARS = 4000
 
 # How long the client's read waits for the GUI thread to answer ``state``:
 # at once when the product is idle or cycling, never while one long
@@ -326,13 +318,12 @@ def unified_diff(before, after):
 
 
 class _View(object):
-    __slots__ = ("dock", "kind", "name", "editor")
+    __slots__ = ("dock", "kind", "name")
 
     def __init__(self, dock, kind, name):
         self.dock = dock
         self.kind = kind
         self.name = name
-        self.editor = None  # a data file's text widget, once looked for
 
 
 class _ItemList(object):
@@ -879,62 +870,14 @@ class ViewTracker(object):
 
     def state(self):
         # type: () -> dict
-        """The editors' state: ``unsaved`` files and the ``selection``; empty when nothing.
+        """The editors' state: the ``unsaved`` data files; empty when there are none.
 
-        GUI thread only. The selection is the one in the data file in
-        front, or failing that in another open one.
+        GUI thread only.
         """
         if not self._active:
             return {}
-        state = {}
-        front = self._view_with_focus() or self._current
-        editors = [v for v in self._views if v.kind == KIND_DATA_FILE]
-        editors.sort(key=lambda v: v is not front)
-        unsaved = [v.name for v in editors if _has_unsaved_edits(v.dock)]
-        if unsaved:
-            state["unsaved"] = unsaved
-        for view in editors:
-            selection = self._selection_in(view)
-            if selection is not None:
-                state["selection"] = selection
-                break
-        return state
-
-    def _selection_in(self, view):
-        # type: (object) -> dict
-        """The text selected in the view's editor, or None when there is none."""
-        text = None
-        for _attempt in (1, 2):
-            if view.editor is None:
-                view.editor = self._find_editor(view.dock)
-                if view.editor is None:
-                    return None
-            try:
-                text = view.editor.inputMethodQuery(_input_method_query(self._core))
-                break
-            except Exception:
-                view.editor = None  # its wrapper was declared dead (see Identity)
-        if not text:
-            return None
-        text = str(text)
-        if not text:
-            return None
-        selection = {"name": view.name}
-        if len(text) > MAX_SELECTION_CHARS:
-            text = text[:MAX_SELECTION_CHARS]
-            selection["truncated"] = True
-        selection["text"] = text
-        return selection
-
-    def _find_editor(self, dock):
-        # type: (object) -> object
-        try:
-            for widget in dock.findChildren(self._widgets.QWidget):
-                if widget.inherits(TEXT_EDIT_BASE_CLASS):
-                    return widget
-        except Exception:
-            pass
-        return None
+        unsaved = [v.name for v in self._views if v.kind == KIND_DATA_FILE and _has_unsaved_edits(v.dock)]
+        return {"unsaved": unsaved} if unsaved else {}
 
     def _record_file(self, path, data):
         # type: (str, dict) -> None
@@ -1025,15 +968,6 @@ def _has_unsaved_edits(dock):
         return str(dock.windowTitle()).strip().endswith("*")
     except Exception:
         return False
-
-
-def _input_method_query(core):
-    """``Qt.ImCurrentSelection`` as the binding spells it."""
-    qt = core.Qt
-    value = getattr(qt, "ImCurrentSelection", None)
-    if value is None:
-        value = qt.InputMethodQuery.ImCurrentSelection
-    return value
 
 
 def _read_items(item_list):
