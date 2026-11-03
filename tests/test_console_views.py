@@ -98,24 +98,11 @@ class _Widget(_Properties):
         super().__init__()
         self._cls = cls
         self._parent = parent
-        self._kids = []
-        if parent is not None:
-            parent._kids.append(self)
         self.title = title
         self.visible = visible
 
     def metaObject(self):
         return _Meta(self._cls)
-
-    def inherits(self, name):
-        return False
-
-    def findChildren(self, cls):
-        found = []
-        for kid in self._kids:
-            found.append(kid)
-            found.extend(kid.findChildren(cls))
-        return found
 
     def parentWidget(self):
         return self._parent
@@ -133,24 +120,6 @@ class _Widget(_Properties):
 
     def isVisible(self):
         return self.visible
-
-
-class _Editor(_Widget):
-    """The editor's Scintilla text widget: its selection is read through inputMethodQuery."""
-
-    def __init__(self, parent):
-        super().__init__("itasca3d::DataTextEdit", parent=parent)
-        self.selection = ""
-        self.dead = False  # a wrapper the binding declared dead
-
-    def inherits(self, name):
-        return name == "ScintillaEditBase"
-
-    def inputMethodQuery(self, query):
-        if self.dead:
-            raise RuntimeError("Internal C++ object already deleted.")
-        assert query == "ImCurrentSelection"
-        return self.selection
 
 
 class _Item:
@@ -216,20 +185,19 @@ class _Gui:
         self.core = SimpleNamespace(
             QTimer=_Timer,
             QCoreApplication=SimpleNamespace(instance=lambda: gui.app),
-            Qt=SimpleNamespace(ImCurrentSelection="ImCurrentSelection", ControlModifier=4),
+            Qt=SimpleNamespace(ControlModifier=4),
         )
         self.qt_widgets = SimpleNamespace(
             QApplication=SimpleNamespace(
                 allWidgets=lambda: list(gui.widgets),
                 focusWidget=lambda: gui.focus,
-            ),
-            QWidget=object,
+            )
         )
 
     def view(self, kind, title, visible=True):
         dock = _Widget("itascaxd::ItascaDockWidget", title=title, visible=visible)
         page = _Widget("itasca3d::PlotPage" if kind == "plot" else "itasca3d::EditorPage", parent=dock)
-        body = _Widget("itasca3d::PlotDisplay", parent=page) if kind == "plot" else _Editor(page)
+        body = _Widget("itasca3d::PlotDisplay" if kind == "plot" else "itasca3d::DataTextEdit", parent=page)
         self.widgets += [dock, page, body]
         return SimpleNamespace(dock=dock, page=page, body=body)
 
@@ -974,62 +942,9 @@ def test_state_names_the_files_with_unsaved_edits(gui, history):
     assert tracker.state() == {"unsaved": ["a"]}
 
 
-def test_state_carries_the_selection_in_the_editor_in_front(gui, history):
-    a = gui.view("data_file", "a")
-    b = gui.view("data_file", "b")
-    tracker = _install(gui, history)
-    a.body.selection = "ball create"
-    b.body.selection = "model cycle 10"
-
-    gui.focus_on(b.body)
-    assert tracker.state() == {"selection": {"name": "b", "text": "model cycle 10"}}
-
-    # The person went to the console: the editor they were in is still the one in front.
-    gui.focus_on(None)
-    assert tracker.state() == {"selection": {"name": "b", "text": "model cycle 10"}}
-
-
-def test_a_selection_in_another_editor_counts_when_the_one_in_front_has_none(gui, history):
-    a = gui.view("data_file", "a")
-    b = gui.view("data_file", "b")
-    tracker = _install(gui, history)
-    b.body.selection = "model cycle 10"
-
-    gui.focus_on(a.body)
-
-    assert tracker.state()["selection"] == {"name": "b", "text": "model cycle 10"}
-
-
-def test_a_long_selection_is_cut(gui, history):
-    a = gui.view("data_file", "a")
-    tracker = _install(gui, history)
-    a.body.selection = "x" * (views_module.MAX_SELECTION_CHARS + 1)
-
-    selection = tracker.state()["selection"]
-
-    assert selection["truncated"] is True
-    assert len(selection["text"]) == views_module.MAX_SELECTION_CHARS
-
-
-def test_an_editor_whose_wrapper_died_is_found_again(gui, history):
-    # PySide2 5.11: the text widget's wrapper is declared dead, the widget lives on.
-    a = gui.view("data_file", "a")
-    tracker = _install(gui, history)
-    a.body.selection = "model cycle 10"
-    assert tracker.state()["selection"]["text"] == "model cycle 10"
-
-    alive = _rewrap(a.body)
-    a.page._kids[a.page._kids.index(a.body)] = alive
-    a.body.dead = True
-    alive.selection = "model cycle 100"
-
-    assert tracker.state()["selection"]["text"] == "model cycle 100"
-
-
 def test_state_is_empty_after_uninstall(gui, history):
     a = gui.view("data_file", "a")
     tracker = _install(gui, history)
-    a.body.selection = "model cycle 10"
     a.dock.title = "a*"
 
     tracker.uninstall()
@@ -1060,7 +975,7 @@ class _Executor:
 def test_module_state_is_read_on_the_gui_thread(gui, history, installed):
     a = gui.view("data_file", "a")
     installed.look()
-    a.body.selection = "model cycle 10"
+    a.dock.title = "a*"
     executor = _Executor()
     import threading
 
@@ -1072,7 +987,7 @@ def test_module_state_is_read_on_the_gui_thread(gui, history, installed):
     executor.pump()
     reader.join()
 
-    assert result == [{"selection": {"name": "a", "text": "model cycle 10"}}]
+    assert result == [{"unsaved": ["a"]}]
 
 
 def test_module_state_gives_up_when_the_gui_thread_is_held(gui, history, installed):

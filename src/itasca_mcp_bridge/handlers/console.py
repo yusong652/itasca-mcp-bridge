@@ -15,8 +15,8 @@ def handle_console_history(ctx, data):
     ``entries`` (oldest first, at most ``limit`` and the newest of those),
     ``cursor`` (id of the last delivered entry), ``has_more``, and
     ``state`` when there is any: what the person is doing in the GUI's
-    editors right now (``unsaved`` data files, the ``selection``), read
-    on the GUI thread for this call.
+    editors right now (the ``unsaved`` data files), read on the GUI
+    thread for this call.
     """
     request_id = data.get("request_id", "unknown")
     history = getattr(ctx, "console_history", None)
