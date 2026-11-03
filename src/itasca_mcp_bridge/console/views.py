@@ -114,14 +114,24 @@ Editing a data file (measured on PFC 7.0)
 What the person is doing right now
     Not a history but a state, read when the client asks (``state``, on
     the GUI thread): which data files have unsaved edits -- the ``*`` on
-    the dock's title -- and the text selected in the editor in front. The
-    selection is asked of the editor's text widget, a Scintilla
-    ``ScintillaEditBase``, through ``inputMethodQuery``: the binding wraps
-    the widget as a plain scroll area without Scintilla's methods, but the
-    input-method query for the current selection is a ``QWidget`` virtual
-    the widget answers (measured on PFC 9.8). A selection is reported as
-    long as it stands, not when it is made: dragging one out fires the
-    editor's signals once per character.
+    the dock's title -- and where the selection is in the editor in
+    front, as the file's path and a line range. The client reads the
+    lines itself, so being told again costs it nothing, and a selection
+    is reported as long as it stands, not when it is made (dragging one
+    out fires the editor's signals once per character).
+
+    The editor's text widget is a Scintilla ``ScintillaEditBase`` that
+    the binding wraps as a plain scroll area, without Scintilla's
+    methods; what it still answers are the ``QWidget`` input-method
+    queries: the selected text, the paragraph around the cursor and the
+    cursor's offset in it (measured on PFC 9.8 and 6.0). Neither the
+    file's path nor a line number is to be had from the editor, so the
+    path is the project's Data Files entry with the view's name
+    (``project_files``), and the lines are found by locating the
+    paragraph in the file on disk and the selection at the cursor's end
+    of it. A selection that cannot be placed -- the file not listed, the
+    paragraph not on disk as the buffer has it, or there twice -- is not
+    reported.
 
 Identity
     A view or list is recognised again by holding its wrapper: the binding
@@ -153,6 +163,7 @@ Python 3.6 compatible implementation.
 import difflib
 import logging
 import os
+import pathlib
 import threading
 
 from .history import SOURCE_COMMAND, SOURCE_PLOT_ITEM, SOURCE_PYTHON, SOURCE_VIEW
@@ -188,13 +199,15 @@ HOOKED_PROPERTY = "_itasca_mcp_bridge_hooked"
 # class is the product's own: ``DataTextEdit`` on 9.8).
 TEXT_EDIT_BASE_CLASS = "ScintillaEditBase"
 
-# A file read for a diff, at most; a diff reported, at most; a selection
-# reported, at most.
+# What the editor is asked about its selection, in this order: the
+# selected text, the paragraph around the cursor, the cursor's offset in it.
+SELECTION_QUERIES = ("ImCurrentSelection", "ImSurroundingText", "ImCursorPosition")
+
+# A file read for a diff, at most; a diff reported, at most.
 MAX_SNAPSHOT_BYTES = 1024 * 1024
 MAX_DIFF_LINES = 80
 MAX_DIFF_CHARS = 4000
 DIFF_CONTEXT_LINES = 2
-MAX_SELECTION_CHARS = 4000
 
 # How long the client's read waits for the GUI thread to answer ``state``:
 # at once when the product is idle or cycling, never while one long
@@ -301,6 +314,35 @@ def read_text(path):
         return raw.decode("latin-1")
 
 
+def selection_lines(text, selection, paragraph, cursor):
+    # type: (str, str, str, int) -> tuple
+    """``(first, last)``, the 1-based lines ``selection`` covers in ``text``, or None.
+
+    ``paragraph`` is the text around the cursor as the editor gives it and
+    ``cursor`` the cursor's offset in it; the selection begins or ends at
+    the cursor. None when the paragraph is not in ``text`` exactly once,
+    or the selection is not at the cursor there -- the buffer and the file
+    differ, or the paragraph is not the one.
+    """
+    if not selection or not paragraph:
+        return None
+    start = text.find(paragraph)
+    if start < 0 or text.find(paragraph, start + 1) >= 0:
+        return None
+    at = start + cursor
+    n = len(selection)
+    if text[at:at + n] == selection:
+        begin = at
+    elif at >= n and text[at - n:at] == selection:
+        begin = at - n
+    else:
+        return None
+    end = begin + n
+    if selection.endswith("\n"):
+        end -= 1  # a selection ending with a line's break does not take in the next line
+    return text.count("\n", 0, begin) + 1, text.count("\n", 0, end) + 1
+
+
 def unified_diff(before, after):
     # type: (str, str) -> tuple
     """``(diff, truncated)``: the hunks between two texts, cut to size.
@@ -326,13 +368,14 @@ def unified_diff(before, after):
 
 
 class _View(object):
-    __slots__ = ("dock", "kind", "name", "editor")
+    __slots__ = ("dock", "kind", "name", "editor", "path")
 
     def __init__(self, dock, kind, name):
         self.dock = dock
         self.kind = kind
         self.name = name
         self.editor = None  # a data file's text widget, once looked for
+        self.path = None  # a data file's path, once found in the project
 
 
 class _ItemList(object):
@@ -349,10 +392,11 @@ class _ItemList(object):
 class ViewTracker(object):
     """Watches the GUI's plots and data files and records what changes."""
 
-    def __init__(self, history, qt_core, qt_widgets):
+    def __init__(self, history, qt_core, qt_widgets, listed=None):
         self._history = history
         self._core = qt_core
         self._widgets = qt_widgets
+        self._listed = listed  # () -> the project's data file paths, or None
         self._views = []  # type: list
         self._lists = []  # type: list
         self._current = None  # type: object
@@ -882,7 +926,8 @@ class ViewTracker(object):
         """The editors' state: ``unsaved`` files and the ``selection``; empty when nothing.
 
         GUI thread only. The selection is the one in the data file in
-        front, or failing that in another open one.
+        front, or failing that in another open one, as ``path`` and
+        ``lines`` (first and last, 1-based).
         """
         if not self._active:
             return {}
@@ -902,29 +947,69 @@ class ViewTracker(object):
 
     def _selection_in(self, view):
         # type: (object) -> dict
-        """The text selected in the view's editor, or None when there is none."""
-        text = None
+        """Where the view's editor has its selection, or None when it has none or it cannot be placed."""
+        answers = self._ask_editor(view, SELECTION_QUERIES)
+        if answers is None:
+            return None
+        selection, paragraph, cursor = answers
+        if not selection:
+            return None
+        path = self._path_of(view)
+        if path is None:
+            return None
+        text = read_text(path)
+        if text is None:
+            return None
+        try:
+            cursor = int(cursor)
+        except (TypeError, ValueError):
+            return None
+        lines = selection_lines(text, str(selection), str(paragraph or ""), cursor)
+        if lines is None:
+            return None
+        return {"name": view.name, "path": path, "lines": list(lines)}
+
+    def _ask_editor(self, view, queries):
+        # type: (object, tuple) -> list
+        """The editor's answers to the input-method ``queries``, or None without an editor."""
         for _attempt in (1, 2):
             if view.editor is None:
                 view.editor = self._find_editor(view.dock)
                 if view.editor is None:
                     return None
             try:
-                text = view.editor.inputMethodQuery(_input_method_query(self._core))
-                break
+                return [view.editor.inputMethodQuery(_qt_enum(self._core.Qt, q)) for q in queries]
             except Exception:
                 view.editor = None  # its wrapper was declared dead (see Identity)
-        if not text:
+        return None
+
+    def _path_of(self, view):
+        # type: (object) -> str
+        """The project's data file with the view's name, once; None when there is not exactly one."""
+        if view.path is not None:
+            return view.path
+        if self._listed is None:
             return None
-        text = str(text)
-        if not text:
+        try:
+            paths = self._listed()
+        except Exception:
             return None
-        selection = {"name": view.name}
-        if len(text) > MAX_SELECTION_CHARS:
-            text = text[:MAX_SELECTION_CHARS]
-            selection["truncated"] = True
-        selection["text"] = text
-        return selection
+        if not paths:
+            return None
+        # The project's paths are normalized (lower case on Windows); the
+        # view's name is the file's own spelling, and so is the path given
+        # back, as the file system has it.
+        wanted = str(view.name or "").lower()
+        matches = [p for p in paths if file_view_name(p).lower() == wanted]
+        if len(matches) != 1:
+            return None
+        path = matches[0]
+        try:
+            path = str(pathlib.Path(path).resolve())
+        except Exception:
+            pass
+        view.path = path.replace("\\", "/")
+        return view.path
 
     def _find_editor(self, dock):
         # type: (object) -> object
@@ -1027,12 +1112,11 @@ def _has_unsaved_edits(dock):
         return False
 
 
-def _input_method_query(core):
-    """``Qt.ImCurrentSelection`` as the binding spells it."""
-    qt = core.Qt
-    value = getattr(qt, "ImCurrentSelection", None)
+def _qt_enum(qt, name):
+    """``Qt.<name>`` as the binding spells it (PySide6 keeps the enum's own namespace too)."""
+    value = getattr(qt, name, None)
     if value is None:
-        value = qt.InputMethodQuery.ImCurrentSelection
+        value = getattr(qt.InputMethodQuery, name)
     return value
 
 
@@ -1076,13 +1160,14 @@ def install(history):
         _tracker = None
 
     from ..utils.modal_guard import _import_qt
+    from . import project_files
 
     core, widgets = _import_qt()
     if core is None or widgets is None:
         logger.info("No Qt widgets binding; view tracking disabled")
         return False
 
-    tracker = ViewTracker(history, core, widgets)
+    tracker = ViewTracker(history, core, widgets, listed=project_files.listed_paths)
     try:
         ok = tracker.install()
     except Exception as e:

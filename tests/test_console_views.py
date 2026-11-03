@@ -15,7 +15,7 @@ import pytest
 
 from itasca_mcp_bridge.console import views as views_module
 from itasca_mcp_bridge.console.history import ConsoleHistory
-from itasca_mcp_bridge.console.views import ViewTracker, diff_items
+from itasca_mcp_bridge.console.views import ViewTracker, diff_items, selection_lines
 
 
 @pytest.fixture
@@ -45,6 +45,27 @@ def test_diff_items_reports_a_name_changed_in_place():
 
 def test_diff_items_does_not_pair_across_a_length_change():
     assert diff_items(["Ball", "Legend"], ["Wall", "Contact", "Legend"]) == (["Wall", "Contact"], ["Ball"], [])
+
+
+TEXT = "model new\nball create\n\nmodel cycle 10\nmodel save 'a'\n"
+
+
+def test_selection_lines_from_the_cursor_at_either_end():
+    paragraph = "model cycle 10\nmodel save 'a'\n"
+    assert selection_lines(TEXT, "cycle 10", paragraph, 6) == (4, 4)
+    assert selection_lines(TEXT, "cycle 10", paragraph, 14) == (4, 4)
+    assert selection_lines(TEXT, "10\nmodel", paragraph, 12) == (4, 5)
+
+
+def test_selection_lines_ending_with_a_line_break_stay_on_that_line():
+    assert selection_lines(TEXT, "model cycle 10\n", "model cycle 10\nmodel save 'a'\n", 0) == (4, 4)
+
+
+def test_selection_lines_need_the_paragraph_on_disk_once():
+    assert selection_lines(TEXT, "cycle", "model cycle 100\n", 6) is None  # the buffer has unsaved edits
+    assert selection_lines(TEXT + TEXT, "cycle 10", "model cycle 10\nmodel save 'a'\n", 6) is None
+    assert selection_lines(TEXT, "save", "model cycle 10\nmodel save 'a'\n", 0) is None  # not at the cursor
+    assert selection_lines(TEXT, "", "model new", 0) is None
 
 
 def test_history_keeps_data_field(history):
@@ -136,11 +157,13 @@ class _Widget(_Properties):
 
 
 class _Editor(_Widget):
-    """The editor's Scintilla text widget: its selection is read through inputMethodQuery."""
+    """The editor's Scintilla text widget, answering the input-method queries."""
 
     def __init__(self, parent):
         super().__init__("itasca3d::DataTextEdit", parent=parent)
         self.selection = ""
+        self.paragraph = ""
+        self.cursor = 0
         self.dead = False  # a wrapper the binding declared dead
 
     def inherits(self, name):
@@ -149,8 +172,20 @@ class _Editor(_Widget):
     def inputMethodQuery(self, query):
         if self.dead:
             raise RuntimeError("Internal C++ object already deleted.")
-        assert query == "ImCurrentSelection"
-        return self.selection
+        return {"ImCurrentSelection": self.selection, "ImSurroundingText": self.paragraph, "ImCursorPosition": self.cursor}[query]
+
+    def select(self, text, selection, cursor_at_end=False):
+        """Select ``selection`` in ``text`` (its first occurrence), as the editor would report it."""
+        begin = text.index(selection)
+        paragraphs = text.split("\n\n")
+        offset = 0
+        for paragraph in paragraphs:
+            if offset <= begin < offset + len(paragraph) + 1:
+                break
+            offset += len(paragraph) + 2
+        self.paragraph = paragraph
+        self.selection = selection
+        self.cursor = begin - offset + (len(selection) if cursor_at_end else 0)
 
 
 class _Item:
@@ -211,12 +246,18 @@ class _Gui:
         _Timer.queued.clear()
         self.widgets = []
         self.focus = None
+        self.paths = set()  # the project's data files
         self.app = SimpleNamespace(focusChanged=_Signal())
         gui = self
         self.core = SimpleNamespace(
             QTimer=_Timer,
             QCoreApplication=SimpleNamespace(instance=lambda: gui.app),
-            Qt=SimpleNamespace(ImCurrentSelection="ImCurrentSelection", ControlModifier=4),
+            Qt=SimpleNamespace(
+                ImCurrentSelection="ImCurrentSelection",
+                ImSurroundingText="ImSurroundingText",
+                ImCursorPosition="ImCursorPosition",
+                ControlModifier=4,
+            ),
         )
         self.qt_widgets = SimpleNamespace(
             QApplication=SimpleNamespace(
@@ -254,7 +295,7 @@ def gui():
 
 
 def _install(gui, history):
-    tracker = ViewTracker(history, gui.core, gui.qt_widgets)
+    tracker = ViewTracker(history, gui.core, gui.qt_widgets, listed=lambda: gui.paths)
     assert tracker.install() is True
     return tracker
 
@@ -974,62 +1015,88 @@ def test_state_names_the_files_with_unsaved_edits(gui, history):
     assert tracker.state() == {"unsaved": ["a"]}
 
 
-def test_state_carries_the_selection_in_the_editor_in_front(gui, history):
+def _project_file(gui, tmp_path, name, text=TEXT):
+    path = str(tmp_path / (name + ".dat")).replace("\\", "/")
+    (tmp_path / (name + ".dat")).write_bytes(text.encode())  # the endings as the editor has them
+    gui.paths.add(path)
+    return path
+
+
+def test_state_places_the_selection_in_the_editor_in_front(gui, history, tmp_path):
     a = gui.view("data_file", "a")
     b = gui.view("data_file", "b")
+    _project_file(gui, tmp_path, "a")
+    pb = _project_file(gui, tmp_path, "b")
     tracker = _install(gui, history)
-    a.body.selection = "ball create"
-    b.body.selection = "model cycle 10"
+    a.body.select(TEXT, "ball create")
+    b.body.select(TEXT, "cycle 10\nmodel", cursor_at_end=True)
 
     gui.focus_on(b.body)
-    assert tracker.state() == {"selection": {"name": "b", "text": "model cycle 10"}}
+    assert tracker.state() == {"selection": {"name": "b", "path": pb, "lines": [4, 5]}}
 
     # The person went to the console: the editor they were in is still the one in front.
     gui.focus_on(None)
-    assert tracker.state() == {"selection": {"name": "b", "text": "model cycle 10"}}
+    assert tracker.state() == {"selection": {"name": "b", "path": pb, "lines": [4, 5]}}
 
 
-def test_a_selection_in_another_editor_counts_when_the_one_in_front_has_none(gui, history):
+def test_a_selection_in_another_editor_counts_when_the_one_in_front_has_none(gui, history, tmp_path):
     a = gui.view("data_file", "a")
     b = gui.view("data_file", "b")
+    _project_file(gui, tmp_path, "a")
+    pb = _project_file(gui, tmp_path, "b")
     tracker = _install(gui, history)
-    b.body.selection = "model cycle 10"
+    b.body.select(TEXT, "ball create")
 
     gui.focus_on(a.body)
 
-    assert tracker.state()["selection"] == {"name": "b", "text": "model cycle 10"}
+    assert tracker.state()["selection"] == {"name": "b", "path": pb, "lines": [2, 2]}
 
 
-def test_a_long_selection_is_cut(gui, history):
+def test_a_selection_in_a_file_the_project_does_not_list_is_not_reported(gui, history, tmp_path):
     a = gui.view("data_file", "a")
     tracker = _install(gui, history)
-    a.body.selection = "x" * (views_module.MAX_SELECTION_CHARS + 1)
+    a.body.select(TEXT, "ball create")
 
-    selection = tracker.state()["selection"]
+    assert tracker.state() == {}
 
-    assert selection["truncated"] is True
-    assert len(selection["text"]) == views_module.MAX_SELECTION_CHARS
+    _project_file(gui, tmp_path, "a")  # listed later: found then, and kept
+    assert tracker.state()["selection"]["lines"] == [2, 2]
+    gui.paths.clear()
+    assert tracker.state()["selection"]["lines"] == [2, 2]
 
 
-def test_an_editor_whose_wrapper_died_is_found_again(gui, history):
+def test_a_selection_the_disk_does_not_have_is_not_reported(gui, history, tmp_path):
+    # The buffer has unsaved edits around the selection: the lines on disk are not what they see.
+    a = gui.view("data_file", "a")
+    _project_file(gui, tmp_path, "a")
+    tracker = _install(gui, history)
+    a.body.select(TEXT.replace("cycle 10", "cycle 100"), "cycle 100")
+    a.dock.title = "a*"
+
+    assert tracker.state() == {"unsaved": ["a"]}
+
+
+def test_an_editor_whose_wrapper_died_is_found_again(gui, history, tmp_path):
     # PySide2 5.11: the text widget's wrapper is declared dead, the widget lives on.
     a = gui.view("data_file", "a")
+    _project_file(gui, tmp_path, "a")
     tracker = _install(gui, history)
-    a.body.selection = "model cycle 10"
-    assert tracker.state()["selection"]["text"] == "model cycle 10"
+    a.body.select(TEXT, "ball create")
+    assert tracker.state()["selection"]["lines"] == [2, 2]
 
     alive = _rewrap(a.body)
     a.page._kids[a.page._kids.index(a.body)] = alive
     a.body.dead = True
-    alive.selection = "model cycle 100"
+    alive.select(TEXT, "model save")
 
-    assert tracker.state()["selection"]["text"] == "model cycle 100"
+    assert tracker.state()["selection"]["lines"] == [5, 5]
 
 
-def test_state_is_empty_after_uninstall(gui, history):
+def test_state_is_empty_after_uninstall(gui, history, tmp_path):
     a = gui.view("data_file", "a")
+    _project_file(gui, tmp_path, "a")
     tracker = _install(gui, history)
-    a.body.selection = "model cycle 10"
+    a.body.select(TEXT, "ball create")
     a.dock.title = "a*"
 
     tracker.uninstall()
@@ -1060,7 +1127,7 @@ class _Executor:
 def test_module_state_is_read_on_the_gui_thread(gui, history, installed):
     a = gui.view("data_file", "a")
     installed.look()
-    a.body.selection = "model cycle 10"
+    a.dock.title = "a*"
     executor = _Executor()
     import threading
 
@@ -1072,7 +1139,7 @@ def test_module_state_is_read_on_the_gui_thread(gui, history, installed):
     executor.pump()
     reader.join()
 
-    assert result == [{"selection": {"name": "a", "text": "model cycle 10"}}]
+    assert result == [{"unsaved": ["a"]}]
 
 
 def test_module_state_gives_up_when_the_gui_thread_is_held(gui, history, installed):

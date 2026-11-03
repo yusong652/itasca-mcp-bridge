@@ -124,6 +124,22 @@ def register(path, force=False):
         return False
 
 
+def listed_paths():
+    # type: () -> set
+    """Normalized paths of the project's data files; None without a readable pane.
+
+    GUI thread only; never raises.
+    """
+    try:
+        registrar = _get_registrar()
+        if registrar is None:
+            return None
+        return registrar.listed()
+    except Exception as e:
+        logger.debug("Project data files not readable: %s", e)
+        return None
+
+
 def _get_registrar():
     global _registrar
     if _registrar is None:
