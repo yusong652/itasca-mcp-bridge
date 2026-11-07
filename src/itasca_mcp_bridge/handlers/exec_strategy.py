@@ -164,8 +164,12 @@ def _timeout_response(timeout_ms, termination):
     elif method == "stuck_in_c":
         message = (
             "Execution timed out after {}ms. Bridge failed to terminate "
-            "the code - it is likely stuck in a C extension. The bridge "
-            "may recover when the C call returns; otherwise restart."
+            "the code - it is likely stuck in a C extension. If the engine "
+            "console shows an interactive prompt (e.g. 'Job Title', a FISH "
+            "continuation), the command is waiting for input there: "
+            "completing the prompt in the console recovers the bridge. "
+            "Otherwise it may recover when the C call returns; if not, "
+            "restart."
         ).format(timeout_ms)
     else:
         message = "Execution timed out after {}ms.".format(timeout_ms)
