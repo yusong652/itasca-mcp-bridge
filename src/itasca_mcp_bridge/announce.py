@@ -170,6 +170,10 @@ ANNOUNCEMENTS = {
         "What you select in the data file editor is no longer handed to your "
         "agent (0.6.9 did, as text): point it at lines by number instead.",
     ),
+    "0.6.11": (
+        "Fixed a FLAC3D 9.8 GUI crash that could lose the project file after "
+        "a session that created and deleted many plots.",
+    ),
 }
 
 

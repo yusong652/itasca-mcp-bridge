@@ -6,6 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.11] - 2026-11-07
+
+### Fixed
+- Registering a data file in the GUI project could crash the FLAC3D 9.8
+  GUI and truncate the project file to zero bytes, once the session had
+  created and deleted many plot docks: the dock enumeration that ran
+  half a second after the editor's close -- to bring back the view the
+  editor displaced -- touched the editor's dock while it was being
+  destroyed and corrupted the heap, and the GUI's next project save died
+  on it (yusong652/itasca-mcp#227; four crashes with one signature,
+  isolated by suppressing the enumerations and the open/close each in
+  turn). The displaced view is now found and reactivated between the
+  open and the close, while every dock is alive; after the close no
+  widget is touched at all.
+
 ## [0.6.10] - 2026-11-03
 
 ### Removed
