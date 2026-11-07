@@ -19,14 +19,21 @@ How (measured on PFC 6.0 and 7.0 with PySide2 5.11, PFC 9.8 with PySide6)
     also executing the file (``program call`` with a bad label gets the
     file listed, and an error in the console with it).
 
-    On 9.x the editor took the tile of whatever view was in front and the
-    close leaves that tile empty, the previous view parked; the GUI's own
-    ``activate(bool)`` slot on the parked dock brings it back, so every
-    dock visible before and hidden after is reactivated. On 6.0/7.0 the
-    close destroys the editor's dock and the previous view returns by
-    itself. After the close no widget is enumerated: the editor's dock is
-    then still being destroyed, and wrapping a widget in that state took
-    the 9.x product down three times running.
+    On 9.x the editor takes the tile of whatever view was in front and
+    the close leaves that tile empty, the previous view parked; the GUI's
+    own ``activate(bool)`` slot on the parked dock brings it back, so
+    every dock the open parked is reactivated. On 6.0/7.0 the close
+    destroys the editor's dock and the previous view returns by itself.
+    The parked views are found between the open and the close, when
+    every dock is alive. After the close no widget is touched: the
+    editor's dock is then being destroyed, and wrapping a widget in that
+    state took the 9.x product down three times running -- and waiting
+    half a second is not enough either, once the session has seen heavy
+    dock churn: the settle-time dock enumeration then corrupts the heap
+    and the GUI's next project save dies on it, the project file
+    truncated to zero bytes (issue #227, four crashes with one
+    signature; isolated 2026-11-07 by suppressing each half in turn --
+    the enumerations alone and the open/close alone both run clean).
 
     Whether a file is already listed is read from the Project pane, never
     guessed: the GUI adds nothing twice, and a file the person has open in
@@ -54,9 +61,10 @@ Calling slots: queued, never from the Python stack (measured on PFC 9.8)
     which both bindings accept) with a *queued* connection, and its
     signals are emitted: that posts an event, and the slot runs when the
     event loop gets to it, with no Python on the stack -- the same path a
-    click takes. The check for a displaced view runs from a timer half a
-    second later, and the ``activate`` it may need is queued too, through
-    ``invokeMethod``. Connections are never taken down again: disconnecting
+    click takes. The check for a displaced view runs one loop pass after
+    the open, before the close is emitted, and the ``activate`` it may
+    need is queued too, through ``invokeMethod``, ahead of the close.
+    Connections are never taken down again: disconnecting
     from a live widget has crashed both bindings' products.
 
     No wrapper of a GUI object is held between calls. A held wrapper of
@@ -99,8 +107,8 @@ DATA_FILES_NODE = "Data Files"
 OPEN_SLOT = "openDataFile(QString,bool)"
 CLOSE_SLOT = "closeDataFile(QString)"
 
-# The open and close have run long before this; the GUI's own work they
-# start (see the module docstring) has had time to finish too.
+# The open and close have run long before this and the GUI has listed
+# the file: the pending guard against re-queuing the path can be let go.
 SETTLE_DELAY_MS = 500
 
 _registrar = None  # type: object
@@ -229,31 +237,42 @@ class _Registrar(object):
         self._pending.add(key)
         registrar = self
 
-        def close():
+        def restore_and_close():
             # One event-loop pass after the open ran, not in the same one:
             # the view tracker's look that the open triggers must not find
-            # the editor's widgets already on their way out.
-            registrar._emit("close_file", target)
+            # the editor's widgets already on their way out. The views the
+            # open parked are brought back NOW, while every dock is alive;
+            # after the close no widget is touched (see the module
+            # docstring: the half-second settle enumeration crashed 9.8
+            # once the session had seen heavy dock churn, issue #227).
+            try:
+                registrar._restore_views(before)
+            finally:
+                registrar._emit("close_file", target)
 
         def settle():
-            registrar._settle(key, before)
+            registrar._pending.discard(key)
 
         try:
-            self._core.QTimer.singleShot(0, close)
+            self._core.QTimer.singleShot(0, restore_and_close)
             self._core.QTimer.singleShot(SETTLE_DELAY_MS, settle)
         except Exception:
             self._pending.discard(key)
         logger.info("Data file queued for the GUI project: %s", target)
         return True
 
-    def _settle(self, key, before):
-        # type: (str, set) -> None
-        """After the open and close ran: bring back a view they displaced.
+    def _restore_views(self, before):
+        # type: (set) -> None
+        """Queue ``activate`` on the views the open parked.
 
-        The docks are looked up again now, by title: no wrapper of one was
-        held across the half second (see the module docstring).
+        Runs between the open and the close: the editor holds the front
+        tile, the views it displaced are parked, nothing is being
+        destroyed. The activations are queued ahead of the close, so
+        their slots still run before it. The docks are looked up again
+        by title: no wrapper of one was held across the loop pass (see
+        the module docstring). 6.0/7.0 need no restoring and
+        ``_activate`` does nothing there (no ``Q_ARG``).
         """
-        self._pending.discard(key)
         try:
             for dock in self._docks():
                 if view_title(dock) in before and not _is_visible(dock):

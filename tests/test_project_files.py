@@ -110,6 +110,7 @@ class _Editor(_Obj):
 
     def openDataFile(self, path, restore):
         self.calls.append(("open", path, restore))
+        self.gui.events.append("open")
         self.gui.listed_paths.append(path)
         dock = _Obj("itascaxd::ItascaDockWidget")
         dock.title = path
@@ -121,6 +122,7 @@ class _Editor(_Obj):
 
     def closeDataFile(self, path):
         self.calls.append(("close", path))
+        self.gui.events.append("close")
         self.gui.widgets.remove(self.gui.editor_dock)
         if self.gui.restores_previous_view:
             for dock in self.gui.docks():
@@ -144,6 +146,7 @@ class _Gui:
         self.restores_previous_view = restores_previous_view
         self.widgets = []
         self.activated = []
+        self.events = []  # open/close/enumerate/activate, in order
         self.editor = _Editor(self)
         self.layout = layout
         plot = _Obj("itascaxd::ItascaDockWidget")
@@ -153,7 +156,7 @@ class _Gui:
         gui = self
         self.qt_widgets = SimpleNamespace(
             QApplication=SimpleNamespace(
-                allWidgets=lambda: list(gui.widgets) + gui.pane(),
+                allWidgets=lambda: gui.events.append("enumerate") or list(gui.widgets) + gui.pane(),
                 topLevelWidgets=lambda: [_Window(gui.editor)],
             ),
             QHeaderView=object,
@@ -229,6 +232,7 @@ def _core(gui):
     def invoke(obj, method, kind, *packed):
         assert kind == 2 and method == "activate"
         gui.activated.append(obj)
+        gui.events.append("activate")
         obj.visible = True
         return True
 
@@ -333,18 +337,38 @@ def test_a_view_the_editor_displaced_is_brought_back(tmp_path):
     gui, registrar = _registrar("9.x", restores_previous_view=False)
 
     registrar.register(str(script))
-    assert gui.activated == []  # not before the GUI has had its half second
+    assert gui.activated == []  # not before the loop pass between open and close
     gui.timers.flush()
 
     assert gui.activated == [gui.plot]
     assert gui.plot.visible is True
 
 
+def test_no_widget_is_touched_after_the_close(tmp_path):
+    # Enumerating docks after the close crashed 9.8 once the session had
+    # seen heavy dock churn (issue #227): everything widget-side -- the
+    # dock lookup and the activate -- runs before the close is emitted.
+    script = tmp_path / "script.dat"
+    script.write_text("model new\n")
+    gui, registrar = _registrar("9.x")
+
+    registrar.register(str(script))
+    gui.timers.flush()
+
+    assert "close" in gui.events
+    assert gui.events.index("activate") < gui.events.index("close")
+    after_close = gui.events[gui.events.index("close") + 1 :]
+    assert "enumerate" not in after_close
+    assert "activate" not in after_close
+
+
 def test_no_reactivation_when_the_gui_restores_the_view_itself(tmp_path):
-    # 6.0/7.0: destroying the editor's dock brings the previous view back.
+    # 6.0/7.0: destroying the editor's dock brings the previous view back,
+    # and the PySide2 binding there has no Q_ARG to queue an activate with.
     script = tmp_path / "script.dat"
     script.write_text("model new\n")
     gui, registrar = _registrar("6.0/7.0", restores_previous_view=True)
+    delattr(registrar._core, "Q_ARG")
 
     assert registrar.register(str(script)) is True
     gui.timers.flush()
