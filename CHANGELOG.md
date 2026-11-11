@@ -6,6 +6,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.12] - 2026-11-11
+
+### Fixed
+- An `execute_code` issued while a task cycled came back with every
+  command behind a seven-line "Logging started" banner, and the task log
+  gained about ten lines per snippet: the `program log-file
+  '.../cmdtmp_*.log'` echo and a pair of Logging ended/started banners.
+  The capture's log sessions in the cycle callback were opened without
+  `show-message off`, and only the trailing `program log off` footer was
+  stripped from what they captured. The per-command log opens there now
+  keep `show-message off`, so they write no banner to the log file or
+  the GUI console. The one command that cannot carry it, the append-form
+  resume of the task's session, has its banner and the capture's own
+  log-control echoes stripped on read. A user's own `program log-file`
+  echo is kept.
+  - PFC 6.0 does accept `show-message` inside the cycle callback in the
+    truncate form; only the append form `program log on show-message off`
+    is rejected there, and that rejection aborts the running cycle (live
+    A/B on PFC3D 6.00.030). 0.4.4 had dropped the keyword from every
+    callback log command; only the append-form resume needs to go without it.
+  - Verified live on PFC3D 6.00 and 7.00; banner layout checked on PFC3D
+    6.00, 7.00 and 9.8 and FLAC3D 9.8.
+- A command that enters an interactive console prompt (`model title`
+  with no argument, or a FISH block fed line by line) never returns to
+  Python, so the timeout cannot end it. The timeout message now says to
+  complete the prompt in the engine console, after which the bridge
+  recovers on its own, instead of only suggesting a restart.
+
 ## [0.6.11] - 2026-11-07
 
 ### Fixed
