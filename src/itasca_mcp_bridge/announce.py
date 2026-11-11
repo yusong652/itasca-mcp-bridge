@@ -174,6 +174,12 @@ ANNOUNCEMENTS = {
         "Fixed a FLAC3D 9.8 GUI crash that could lose the project file after "
         "a session that created and deleted many plots.",
     ),
+    "0.6.12": (
+        "Commands your agent runs while a simulation is cycling no longer fill "
+        "its replies, the task log or your console with 'Logging started' banners.",
+        "If a command waits at a console prompt (e.g. model title with no title), "
+        "the timeout now says to answer it in the engine console instead of restarting.",
+    ),
 }
 
 
