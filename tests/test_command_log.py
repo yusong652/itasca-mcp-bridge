@@ -27,7 +27,8 @@ class FakeItascaLog:
       logging-ended banner to the current file and end the session, then
       switch the file path.
     - `program log on truncate ...`: truncate the current file, session on.
-    - `program log on ...` (no truncate): session on, append mode.
+    - `program log on ...` (no truncate): session on, append mode. In the
+      cycle hook it rejects `show-message` the way PFC 6.0 does there.
     - `program log off`: append the echo (the footer the capture strips),
       session off.
     - any other command: while a session is live, append `pfc3d><cmd>`
@@ -42,6 +43,7 @@ class FakeItascaLog:
         self.outputs = {}
         self.post_hook_outputs = {}
         self.cycle_hook = None
+        self.in_cycle = False
 
     def _append(self, text):
         if self.log_path is None:
@@ -77,6 +79,10 @@ class FakeItascaLog:
             self.log_path = cmd.split("'")[1]
             return
         if cmd.startswith("program log on"):
+            # PFC3D 6.00.030 in the cycle callback (live, 2026-11-11): the
+            # append form rejects show-message, the truncate form takes it.
+            if self.in_cycle and "truncate" not in cmd and "show-message" in cmd:
+                raise ValueError("Unused extra parameter 4 (show-message) found on command line.")
             if "truncate" in cmd and self.log_path is not None:
                 open(self.log_path, "w").close()
             self.logging = True
@@ -93,7 +99,11 @@ class FakeItascaLog:
             if out:
                 self._append(out)
         if cmd.startswith("model cycle") and self.cycle_hook is not None:
-            self.cycle_hook()
+            self.in_cycle = True
+            try:
+                self.cycle_hook()
+            finally:
+                self.in_cycle = False
         if self.logging:
             post = self.post_hook_outputs.get(cmd)
             if post:
@@ -230,15 +240,16 @@ class TestNestedScope:
         assert "cmdtmp_" in restored_paths[0]
         assert fake_itasca.logging is False  # outer's log off ran at the end
 
-    def test_no_show_message_keyword_inside_cycle_callback(self, fake_itasca, tmp_path):
-        # The 6.0 engine does not know `show-message` and complains — and a
-        # command complaint raised inside the cycle callback silently
-        # aborts the outer task's running `model cycle` (the engine
-        # stops at the interleave cycle with no "cycle limit met").
-        # Every capture command that executes in the callback — the
-        # inner scope's per-command wrap AND the outer-session resume —
-        # must therefore stay keyword-free. Outside the callback the
-        # keyword stays (it suppresses GUI console banners on 7/9).
+    def test_show_message_only_off_the_append_resume_in_callback(self, fake_itasca, tmp_path):
+        # PFC 6.0 in the cycle callback rejects `show-message` in the append
+        # form of `program log on` ("Unused extra parameter 4"), and that
+        # complaint aborts the task's running `model cycle`; the truncate
+        # form takes it (live A/B on PFC3D 6.00.030, 2026-11-11). The
+        # outer-session resume is the one append-form command, so it alone
+        # stays keyword-free; the per-command wraps keep `show-message off`
+        # and write no banners, in the callback or out of it. The fake
+        # raises on a violation, so the run below completing is part of
+        # the check.
         import itasca as fake_module
 
         issued = []
@@ -266,21 +277,20 @@ class TestNestedScope:
 
             itasca.command("model cycle 100")
 
-        # Everything issued from inside the cycle callback is keyword-free.
-        assert in_hook, issued
-        assert all("show-message" not in c for c in in_hook), in_hook
-        # The resume of the outer live session ran (append mode: no truncate).
-        assert any(
-            c.startswith("program log on") and "truncate" not in c for c in in_hook
-        ), in_hook
-        # The outer scope's own wrap (sequential context) keeps the keyword.
-        outside = [c for c in issued if c not in in_hook]
-        assert any("show-message off" in c for c in outside), outside
+        log_on = [c for c in issued if c.startswith("program log on")]
+        appends = [c for c in log_on if "truncate" not in c]
+        truncates = [c for c in log_on if "truncate" in c]
+        # The resume of the outer live session ran in the callback, bare.
+        assert appends == ["program log on"], log_on
+        assert "program log on" in in_hook, in_hook
+        # Every truncate-form open, the callback's included, keeps the keyword.
+        assert any(c in in_hook for c in truncates), (in_hook, truncates)
+        assert all(c.endswith("show-message off") for c in truncates), truncates
 
     def test_no_log_plumbing_in_either_sink(self, fake_itasca, tmp_path):
-        # Without `show-message off` in the callback, every session the
-        # capture opens or switches there writes a banner and an echo of
-        # the bridge's own log command; neither is command output.
+        # Switching the task's live session to the snippet's file, and the
+        # bare append-form resume afterwards, write banners and echoes of
+        # the bridge's own log commands; none of it is command output.
         fake_itasca.outputs["model cycle 100"] = "pre-snippet cycle output\n"
         fake_itasca.post_hook_outputs["model cycle 100"] = "post-snippet cycle output\n"
         fake_itasca.outputs["ball list"] = "inner-only table\n"
