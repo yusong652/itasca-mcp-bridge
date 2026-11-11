@@ -37,6 +37,7 @@ Python 3.6 compatible.
 
 import logging
 import os
+import re
 import uuid
 from contextlib import contextmanager
 
@@ -74,37 +75,52 @@ def _strip_footer(content):
     return content
 
 
+# The engine frames every log session in a banner unless the session was
+# opened with `show-message off` -- which the append-mode resume of a task's
+# session cannot carry (see capture_engine_console). The block is the
+# session's, never the command's output.
+_SESSION_BANNER = re.compile(
+    r"^\*{10,}[ \t]*\n"
+    r"\* Logging (?:started|ended) at [^\n]*\n"
+    r"(?:\*[^\n]*\n)*?"
+    r"\*{10,}[ \t]*(?:\n|\Z)",
+    re.MULTILINE,
+)
+# Echoes of the capture's own log-control commands, as `<prompt>><cmd>`.
+# `program log-file` is matched only with this module's temp-file name, so a
+# user's own log-file command keeps its echo.
+_CONTROL_ECHO = re.compile(
+    r"^[^\s>]*>[ \t]*program log(?: on(?: truncate)?(?: show-message off)?"
+    r"| off|-file '[^'\n]*cmdtmp_[0-9a-f]{8}\.log')[ \t]*(?:\n|\Z)",
+    re.MULTILINE,
+)
+
+
+def _strip_log_plumbing(content):
+    # type: (str) -> str
+    """Drop the session banners and log-control echoes the capture itself caused."""
+    if not content:
+        return content
+    return _CONTROL_ECHO.sub("", _SESSION_BANNER.sub("", content))
+
+
 def _read_and_strip(log_path):
     # type: (str) -> str
     try:
         with open(log_path, encoding="utf-8", errors="replace") as f:
-            return _strip_footer(f.read())
+            return _strip_log_plumbing(_strip_footer(f.read()))
     except OSError:
         return ""
-
-
-def _in_cycle_callback():
-    # type: () -> bool
-    """True when the innermost scope is nested inside another scope's
-    live command — i.e. we are executing in the cycle-gap callback of a
-    task that is currently inside `model cycle`."""
-    return any(outer.in_command for outer in _stack[:-1])
 
 
 def _patched(cmd):
     # type: (str) -> None
     ctx = _stack[-1]
-    # `show-message off` suppresses the logging banners in the GUI
-    # console, but the 6.0 engine does not know the keyword and complains
-    # ("Unused extra parameter") — and a command complaint raised inside
-    # the cycle callback makes the 6.0 engine silently abort the outer task's
-    # running `model cycle` (verified live on PFC3D 6.00.030, 2026-08-05;
-    # 7.0+ accepts the keyword). Drop it whenever this command executes
-    # in the cycle callback: the banners are the lesser evil there.
-    if _in_cycle_callback():
-        _orig_command("program log on truncate")
-    else:
-        _orig_command("program log on truncate show-message off")
+    # `show-message off` keeps the session banners out of the log file and
+    # the GUI console. The truncate form takes it everywhere, the 6.0 cycle
+    # callback included (verified live on PFC3D 6.00.030, 2026-11-11); only
+    # the append form is rejected there (see capture_engine_console).
+    _orig_command("program log on truncate show-message off")
     ctx.in_command = True
     try:
         _orig_command(cmd)
@@ -136,10 +152,7 @@ def _resume_live_session():
     """Restart the live log session on a truncated file, so the outer
     ``_patched`` reads nothing it has not already written when it
     closes the session."""
-    if _in_cycle_callback():
-        _orig_command("program log on truncate")
-    else:
-        _orig_command("program log on truncate show-message off")
+    _orig_command("program log on truncate show-message off")
 
 
 def flush_live_capture():
@@ -271,9 +284,12 @@ def capture_engine_console(stdout_sink, log_dir):
                 if outer.in_command:
                     # Resume the outer session in append mode (no truncate):
                     # its pre-interruption output is still in the file.
-                    # No `show-message off` here — this command always runs
-                    # inside the cycle callback (see _patched above for the
-                    # 6.0-engine abort it would otherwise trigger).
+                    # No `show-message off` here: this always runs in the
+                    # cycle callback, where the 6.0 engine rejects the
+                    # keyword in the append form ("Unused extra parameter 4
+                    # (show-message)") and that complaint aborts the task's
+                    # running `model cycle` (PFC3D 6.00.030, 2026-08-05 and
+                    # 2026-11-11). Its banner is stripped on read instead.
                     _orig_command("program log on")
             except Exception as e:
                 logger.warning(
