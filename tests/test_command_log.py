@@ -49,10 +49,30 @@ class FakeItascaLog:
         with open(self.log_path, "a", encoding="utf-8") as f:
             f.write(text)
 
+    # Banners as PFC3D 7.00 writes them to the log file (live, 2026-11-11):
+    # a session opened without `show-message off` starts with the started
+    # banner and the echo of its own `program log on`; switching the file
+    # of a live session echoes the `program log-file` and closes the old
+    # file with the ended banner.
+    STARTED = (
+        "**********************************************\n"
+        "* Logging started at Wed Nov 11 22:04:33 2026\n"
+        "* By pfc3d Version 7.00 Release 161\n"
+        "* \n"
+        "* \n"
+        "* Job Title: \n"
+        "**********************************************\n"
+    )
+    ENDED = (
+        "**********************************************\n"
+        "* Logging ended at Wed Nov 11 22:04:33 2026\n"
+        "**********************************************\n"
+    )
+
     def command(self, cmd):
         if cmd.startswith("program log-file"):
             if self.logging:
-                self._append("* Logging ended\n")
+                self._append("pfc3d>{}\n".format(cmd) + self.ENDED)
                 self.logging = False
             self.log_path = cmd.split("'")[1]
             return
@@ -60,6 +80,8 @@ class FakeItascaLog:
             if "truncate" in cmd and self.log_path is not None:
                 open(self.log_path, "w").close()
             self.logging = True
+            if "show-message off" not in cmd:
+                self._append(self.STARTED + "pfc3d>{}\n".format(cmd))
             return
         if cmd.startswith("program log off"):
             self._append("pfc3d>program log off\n")
@@ -254,6 +276,43 @@ class TestNestedScope:
         # The outer scope's own wrap (sequential context) keeps the keyword.
         outside = [c for c in issued if c not in in_hook]
         assert any("show-message off" in c for c in outside), outside
+
+    def test_no_log_plumbing_in_either_sink(self, fake_itasca, tmp_path):
+        # Without `show-message off` in the callback, every session the
+        # capture opens or switches there writes a banner and an echo of
+        # the bridge's own log command; neither is command output.
+        fake_itasca.outputs["model cycle 100"] = "pre-snippet cycle output\n"
+        fake_itasca.post_hook_outputs["model cycle 100"] = "post-snippet cycle output\n"
+        fake_itasca.outputs["ball list"] = "inner-only table\n"
+        outer_sink, inner_sink = StringIO(), StringIO()
+
+        def snippet_at_cycle_gap():
+            with capture_engine_console(inner_sink, str(tmp_path)):
+                import itasca
+
+                itasca.command("ball list")
+                itasca.command("ball list")
+
+        fake_itasca.cycle_hook = snippet_at_cycle_gap
+
+        with capture_engine_console(outer_sink, str(tmp_path)):
+            import itasca
+
+            itasca.command("model cycle 100")
+
+        assert inner_sink.getvalue() == ("pfc3d>ball list\ninner-only table\n" * 2)
+        assert outer_sink.getvalue() == (
+            "pfc3d>model cycle 100\npre-snippet cycle output\npost-snippet cycle output\n"
+        )
+
+    def test_plumbing_strip_keeps_lookalike_user_output(self):
+        user = (
+            "pfc3d>program log-file 'my_run.log'\n"
+            "**********************\n"
+            "* table framed in stars\n"
+            "**********************\n"
+        )
+        assert command_log._strip_log_plumbing(user) == user
 
     def test_inner_output_does_not_leak_into_outer_sink(self, fake_itasca, tmp_path):
         fake_itasca.outputs["ball list"] = "inner-only table\n"

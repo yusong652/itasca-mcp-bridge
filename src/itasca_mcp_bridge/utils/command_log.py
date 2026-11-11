@@ -37,6 +37,7 @@ Python 3.6 compatible.
 
 import logging
 import os
+import re
 import uuid
 from contextlib import contextmanager
 
@@ -74,11 +75,39 @@ def _strip_footer(content):
     return content
 
 
+# The engine frames every log session in a banner unless the session was
+# opened with `show-message off` -- which the cycle callback cannot use
+# (see _patched). The block is the session's, never the command's output.
+_SESSION_BANNER = re.compile(
+    r"^\*{10,}[ \t]*\n"
+    r"\* Logging (?:started|ended) at [^\n]*\n"
+    r"(?:\*[^\n]*\n)*?"
+    r"\*{10,}[ \t]*(?:\n|\Z)",
+    re.MULTILINE,
+)
+# Echoes of the capture's own log-control commands, as `<prompt>><cmd>`.
+# `program log-file` is matched only with this module's temp-file name, so a
+# user's own log-file command keeps its echo.
+_CONTROL_ECHO = re.compile(
+    r"^[^\s>]*>[ \t]*program log(?: on(?: truncate)?(?: show-message off)?"
+    r"| off|-file '[^'\n]*cmdtmp_[0-9a-f]{8}\.log')[ \t]*(?:\n|\Z)",
+    re.MULTILINE,
+)
+
+
+def _strip_log_plumbing(content):
+    # type: (str) -> str
+    """Drop the session banners and log-control echoes the capture itself caused."""
+    if not content:
+        return content
+    return _CONTROL_ECHO.sub("", _SESSION_BANNER.sub("", content))
+
+
 def _read_and_strip(log_path):
     # type: (str) -> str
     try:
         with open(log_path, encoding="utf-8", errors="replace") as f:
-            return _strip_footer(f.read())
+            return _strip_log_plumbing(_strip_footer(f.read()))
     except OSError:
         return ""
 
@@ -100,7 +129,8 @@ def _patched(cmd):
     # the cycle callback makes the 6.0 engine silently abort the outer task's
     # running `model cycle` (verified live on PFC3D 6.00.030, 2026-08-05;
     # 7.0+ accepts the keyword). Drop it whenever this command executes
-    # in the cycle callback: the banners are the lesser evil there.
+    # in the cycle callback; _strip_log_plumbing removes the banners it
+    # then writes to the log file (the GUI console still shows them).
     if _in_cycle_callback():
         _orig_command("program log on truncate")
     else:
