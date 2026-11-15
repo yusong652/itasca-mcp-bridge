@@ -180,6 +180,10 @@ ANNOUNCEMENTS = {
         "If a command waits at a console prompt (e.g. model title with no title), "
         "the timeout now says to answer it in the engine console instead of restarting.",
     ),
+    "0.6.13": (
+        "Fixed plots going blank (an empty lavender pane) after your agent ran a "
+        "script while a plot was open. If a plot is still blank, restart the program once.",
+    ),
 }
 
 
