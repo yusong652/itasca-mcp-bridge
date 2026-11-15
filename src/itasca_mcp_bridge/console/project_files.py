@@ -21,19 +21,37 @@ How (measured on PFC 6.0 and 7.0 with PySide2 5.11, PFC 9.8 with PySide6)
 
     On 9.x the editor takes the tile of whatever view was in front and
     the close leaves that tile empty, the previous view parked; the GUI's
-    own ``activate(bool)`` slot on the parked dock brings it back, so
-    every dock the open parked is reactivated. On 6.0/7.0 the close
-    destroys the editor's dock and the previous view returns by itself.
-    The parked views are found between the open and the close, when
-    every dock is alive. After the close no widget is touched: the
-    editor's dock is then being destroyed, and wrapping a widget in that
-    state took the 9.x product down three times running -- and waiting
-    half a second is not enough either, once the session has seen heavy
-    dock churn: the settle-time dock enumeration then corrupts the heap
-    and the GUI's next project save dies on it, the project file
-    truncated to zero bytes (issue #227, four crashes with one
-    signature; isolated 2026-11-07 by suppressing each half in turn --
-    the enumerations alone and the open/close alone both run clean).
+    own ``activate()`` slot on the parked dock brings it back, so every
+    dock the open parked is reactivated. On 6.0/7.0 the close destroys
+    the editor's dock and the previous view returns by itself.
+
+    Two constraints fix when and how (both measured on PFC 9.8):
+
+    - The parked views are found between the open and the close, when
+      every dock is alive. After the close Python touches no widget: the
+      editor's dock is then being destroyed, and wrapping a widget in
+      that state took the 9.x product down three times running -- and
+      waiting half a second is not enough either, once the session has
+      seen heavy dock churn: the settle-time dock enumeration then
+      corrupts the heap and the GUI's next project save dies on it, the
+      project file truncated to zero bytes (issue #227, four crashes
+      with one signature; isolated 2026-11-07 by suppressing each half
+      in turn -- the enumerations alone and the open/close alone both
+      run clean).
+    - The ``activate`` must run after the close has finished, not next
+      to it. The close is not done when its slot returns: the tile gets
+      a "[select content]" placeholder and the editor's dock is deleted
+      some 100 ms later. A view activated before the close, or in the
+      same loop pass after it, is taken out of the tile again by that
+      cleanup, and the tile is left believing it holds the view: an
+      empty lavender pane, the plot's control panel still up, every
+      later ``activate`` a no-op and new plots not shown either
+      (2026-11-15; the state lasts until the product is restarted).
+
+    Both at once: before the close is emitted, each parked dock gets a
+    Qt-side single-shot timer onto its own ``activate()`` slot
+    (``QTimer.singleShot(ms, dock, SLOT("activate()"))``). The timer
+    lives in Qt and dies with the dock; no wrapper outlives the pass.
 
     Whether a file is already listed is read from the Project pane, never
     guessed: the GUI adds nothing twice, and a file the person has open in
@@ -62,8 +80,8 @@ Calling slots: queued, never from the Python stack (measured on PFC 9.8)
     signals are emitted: that posts an event, and the slot runs when the
     event loop gets to it, with no Python on the stack -- the same path a
     click takes. The check for a displaced view runs one loop pass after
-    the open, before the close is emitted, and the ``activate`` it may
-    need is queued too, through ``invokeMethod``, ahead of the close.
+    the open, before the close is emitted; the ``activate`` it may need
+    is a timer of Qt's own, set then and firing after the close is done.
     Connections are never taken down again: disconnecting
     from a live widget has crashed both bindings' products.
 
@@ -110,6 +128,12 @@ CLOSE_SLOT = "closeDataFile(QString)"
 # The open and close have run long before this and the GUI has listed
 # the file: the pending guard against re-queuing the path can be let go.
 SETTLE_DELAY_MS = 500
+# From the close to the ``activate`` of a view the open parked. The close
+# deletes the editor's dock within some 100 ms of its slot returning
+# (gone between 50 and 200 ms on PFC 9.8); activating before that leaves
+# the tile empty for the rest of the session.
+RESTORE_DELAY_MS = 500
+ACTIVATE_SLOT = "activate()"
 
 _registrar = None  # type: object
 
@@ -241,10 +265,10 @@ class _Registrar(object):
             # One event-loop pass after the open ran, not in the same one:
             # the view tracker's look that the open triggers must not find
             # the editor's widgets already on their way out. The views the
-            # open parked are brought back NOW, while every dock is alive;
-            # after the close no widget is touched (see the module
-            # docstring: the half-second settle enumeration crashed 9.8
-            # once the session had seen heavy dock churn, issue #227).
+            # open parked are looked up NOW, while every dock is alive, and
+            # their reactivation is left with Qt for when the close is
+            # done; after the close Python touches no widget (see the
+            # module docstring for both halves).
             try:
                 registrar._restore_views(before)
             finally:
@@ -263,40 +287,41 @@ class _Registrar(object):
 
     def _restore_views(self, before):
         # type: (set) -> None
-        """Queue ``activate`` on the views the open parked.
+        """Set a timer on each view the open parked to ``activate`` it.
 
         Runs between the open and the close: the editor holds the front
         tile, the views it displaced are parked, nothing is being
-        destroyed. The activations are queued ahead of the close, so
-        their slots still run before it. The docks are looked up again
-        by title: no wrapper of one was held across the loop pass (see
-        the module docstring). 6.0/7.0 need no restoring and
-        ``_activate`` does nothing there (no ``Q_ARG``).
+        destroyed. The docks are looked up again by title: no wrapper of
+        one was held across the loop pass (see the module docstring).
+        6.0/7.0 need no restoring and ``_activate_later`` does nothing
+        there (no ``Q_ARG``).
         """
         try:
             for dock in self._docks():
                 if view_title(dock) in before and not _is_visible(dock):
-                    self._activate(dock)
+                    self._activate_later(dock)
         except Exception as e:
             logger.debug("Could not restore the view after registering: %s", e)
 
-    def _activate(self, dock):
+    def _activate_later(self, dock):
         # type: (object) -> None
-        """Queue the GUI's ``activate(true)`` on a parked dock.
+        """Have Qt call the GUI's ``activate()`` on a parked dock, later.
 
-        ``invokeMethod`` with ``Q_ARG`` (PySide6): queued like the rest,
-        and no connection to a dock is recorded anywhere. The 6.0/7.0
-        products neither have ``Q_ARG`` nor need this: there the close
-        destroys the editor's dock and the previous view comes back.
+        A single-shot timer with the dock as receiver: it fires once the
+        close that follows has finished (see ``RESTORE_DELAY_MS``), Qt
+        drops it if the dock is destroyed first, and neither a wrapper
+        nor a connection is kept on the Python side. The 6.0/7.0
+        products (PySide2, no ``Q_ARG``) do not need this: there the
+        close destroys the editor's dock and the previous view comes
+        back.
         """
         core = self._core
-        q_arg = getattr(core, "Q_ARG", None)
-        if q_arg is None:
+        if getattr(core, "Q_ARG", None) is None:
             return
         try:
-            core.QMetaObject.invokeMethod(dock, "activate", core.Qt.QueuedConnection, q_arg(bool, True))
+            core.QTimer.singleShot(RESTORE_DELAY_MS, dock, core.SLOT(ACTIVATE_SLOT))
         except Exception as e:
-            logger.debug("activate could not be queued: %s", e)
+            logger.debug("activate could not be scheduled: %s", e)
 
     def flush_deferred(self):
         """Register what was held back while a task was executing."""
