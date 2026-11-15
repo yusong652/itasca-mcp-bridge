@@ -6,6 +6,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.13] - 2026-11-15
+
+### Fixed
+- On the 9.x GUI, running a task with a plot in front left the plot's
+  tile empty: a lavender pane, the plot's control panel still up, new
+  plots not shown either, until the product was restarted (reported on
+  PFC 9.6, reproduced on PFC 9.8.54). Registering the task's script in
+  the project's Data Files opens it in an editor, closes it, and
+  reactivates the view the editor displaced; since 0.6.11 the activate
+  was queued ahead of the close. The close is not done when its slot
+  returns -- the tile gets a placeholder and the editor's dock is
+  deleted 50-200 ms later -- and a view activated before that is taken
+  out of the tile again by that cleanup. The displaced docks are still
+  looked up before the close, but each now gets a Qt-side single-shot
+  timer onto its own `activate()` slot, firing after the close has
+  finished. Python still touches no widget after the close, so the
+  0.6.11 crash fix holds.
+  - Verified live on PFC 9.8.54.
+
 ## [0.6.12] - 2026-11-11
 
 ### Fixed
