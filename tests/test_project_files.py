@@ -185,12 +185,20 @@ class _Timers:
     def __init__(self):
         self.queued = []
 
-    def singleShot(self, ms, fn):
-        self.queued.append((ms, fn))
+    def singleShot(self, ms, *target):
+        # (ms, callable), or (ms, receiver, slot): a timer of Qt's own
+        # onto a widget's slot, no Python in between.
+        self.queued.append((ms, target))
 
     def flush(self):
+        # By due time, as the event loop would; ties in queue order.
         while self.queued:
-            self.queued.pop(0)[1]()
+            self.queued.sort(key=lambda item: item[0])
+            target = self.queued.pop(0)[1]
+            if len(target) == 1:
+                target[0]()
+            else:
+                self.on_slot(*target)
 
 
 def _core(gui):
@@ -229,11 +237,15 @@ def _core(gui):
 
     gui.timers = _Timers()
 
-    def invoke(obj, method, kind, *packed):
-        assert kind == 2 and method == "activate"
+    def on_slot(obj, slot):
+        assert slot == "activate()"
         gui.activated.append(obj)
         gui.events.append("activate")
         obj.visible = True
+
+    gui.timers.on_slot = on_slot
+
+    def invoke(obj, method, kind, *packed):
         return True
 
     return SimpleNamespace(
@@ -344,10 +356,10 @@ def test_a_view_the_editor_displaced_is_brought_back(tmp_path):
     assert gui.plot.visible is True
 
 
-def test_no_widget_is_touched_after_the_close(tmp_path):
+def test_python_touches_no_widget_after_the_close(tmp_path):
     # Enumerating docks after the close crashed 9.8 once the session had
-    # seen heavy dock churn (issue #227): everything widget-side -- the
-    # dock lookup and the activate -- runs before the close is emitted.
+    # seen heavy dock churn (issue #227): the dock lookup runs before the
+    # close is emitted, and the activate is left to a timer of Qt's own.
     script = tmp_path / "script.dat"
     script.write_text("model new\n")
     gui, registrar = _registrar("9.x")
@@ -355,11 +367,25 @@ def test_no_widget_is_touched_after_the_close(tmp_path):
     registrar.register(str(script))
     gui.timers.flush()
 
-    assert "close" in gui.events
-    assert gui.events.index("activate") < gui.events.index("close")
     after_close = gui.events[gui.events.index("close") + 1 :]
     assert "enumerate" not in after_close
-    assert "activate" not in after_close
+
+
+def test_the_view_is_reactivated_after_the_close_is_done(tmp_path):
+    # Activated before the close, or right after it, the view is taken
+    # out of the tile again by the close's own delayed cleanup and the
+    # tile stays empty for the rest of the session (PFC 9.8).
+    script = tmp_path / "script.dat"
+    script.write_text("model new\n")
+    gui, registrar = _registrar("9.x")
+
+    registrar.register(str(script))
+    gui.timers.queued.pop(0)[1][0]()  # the loop pass after the open
+
+    assert "close" in gui.events and "activate" not in gui.events
+    delay, (receiver, slot) = [t for t in gui.timers.queued if len(t[1]) == 2][0]
+    assert receiver is gui.plot and slot == "activate()"
+    assert delay >= 200  # the editor's dock is deleted some 100 ms after the close
 
 
 def test_no_reactivation_when_the_gui_restores_the_view_itself(tmp_path):
