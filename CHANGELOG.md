@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.14] - 2026-11-16
+
 ### Added
 - A modal dialog in the product GUI is reported to the client: a `view`
   entry of kind `dialog` when it comes up (its title, and for a message
@@ -15,9 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the client could not see before. Read on the view tracker's existing
   look; nothing is clicked or closed. The boxes the modal guard answers
   itself are not reported.
-  - Verified live on PFC 9.8.54 (PySide6) and PFC 7.00 (PySide2) with
-    Tools > Options and the error box after a mistyped command. Options
-    has no button box (measured on 7.0), so it is reported by title only.
+  - Verified live on PFC 9.8.54 (PySide6), PFC 7.00 and PFC 6.00
+    (PySide2) with Tools > Options and the error box after a mistyped
+    command. Options has no button box (measured on 7.0), so it is
+    reported by title only.
 
 ## [0.6.13] - 2026-11-15
 
