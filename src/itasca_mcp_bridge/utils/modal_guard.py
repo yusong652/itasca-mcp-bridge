@@ -258,6 +258,26 @@ def _is_reload_notice(widget):
         return False
 
 
+def answers(widget):
+    # type: (Any) -> bool
+    """Whether the guard presses this dialog's button itself, as things
+    stand now: such a box is gone within a tick, and what it said reaches
+    the client with the call that raised it. Never raises.
+    """
+    if _qt_widgets is None or widget is None:
+        return False
+    if _is_reload_notice(widget):
+        return True
+    if _depth <= 0:
+        return False
+    try:
+        if not widget.inherits("QMessageBox"):
+            return False
+        return len(widget.findChildren(_qt_widgets.QAbstractButton)) == 1
+    except Exception:
+        return False
+
+
 def _tick():
     # type: () -> None
     """One poll. Cheap and silent unless a dialog the guard answers is up."""

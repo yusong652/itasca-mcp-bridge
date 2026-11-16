@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""What is open in the product GUI: plots, data files, plot items.
+"""What is open in the product GUI: plots, data files, plot items, dialogs.
 
 Typing is not the only thing a person does in the GUI. Which plot they have
 in front of them, which data file they are editing, and which items they
@@ -7,9 +7,9 @@ just added to a plot say as much about what they are after as the command
 they type next. This module reports those as entries in the same
 ``ConsoleHistory`` the typed input goes to: ``"view"`` entries when a plot
 or a data file is opened, closed, renamed or brought to the front, or a
-data file is executed from its editor, and
-``"plot_item"`` entries when items are added to, removed from or changed
-in a plot.
+data file is executed from its editor, or a modal dialog comes up or goes
+away, and ``"plot_item"`` entries when items are added to, removed from or
+changed in a plot.
 
 Whoever made the change. The bridge's own code opens plots too, and the
 engine runs the GUI's event loop while it executes a command, so a change
@@ -121,6 +121,29 @@ What the person is doing right now
     query) by searching the file fails silently on an unsaved buffer or
     a repeated paragraph. Not worth an inference.
 
+Modal dialogs (measured on PFC 7.0 and on the 9.x products)
+    A dialog raised while the product is idle -- Tools > Options, the error
+    box after a mistyped command, the save prompt on closing the window --
+    does not hold the bridge up: requests are served while it waits. But
+    the client's code may sit behind it, and nothing else tells the client
+    it is there. So each look also reads ``activeModalWidget()``, and a
+    dialog is recorded once when it comes up (its title, and for a message
+    box what it says and the buttons it offers) and once when it is gone.
+    Reported only: nothing here clicks or closes anything.
+
+    A modal dialog takes the focus when it opens and gives it back when it
+    closes, so the focus signal already brings a look at both edges, and
+    the one-pass deferral matters for the second: when the signal arrives
+    the dialog is still on Qt's modal stack. Focus also moves on every
+    click inside a dialog, so a dialog already known is not recorded again;
+    one raised over another (a file chooser from Options) leaves the first
+    known, and it is closed when it is no longer visible.
+
+    Buttons are those of a message box or of a ``QDialogButtonBox``: every
+    checkbox in a settings dialog is a button too (about 80 in Options).
+    The boxes ``utils.modal_guard`` presses itself are not recorded: the
+    error they carry reaches the client as the failed call's error.
+
 Identity
     A view or list is recognised again by holding its wrapper: the binding
     hands back the same wrapper for a C++ object as long as one is alive,
@@ -153,6 +176,7 @@ import logging
 import os
 import threading
 
+from ..utils import modal_guard
 from .history import SOURCE_COMMAND, SOURCE_PLOT_ITEM, SOURCE_PYTHON, SOURCE_VIEW
 
 logger = logging.getLogger("itasca-mcp-bridge")
@@ -193,8 +217,12 @@ DIFF_CONTEXT_LINES = 2
 # engine command runs.
 STATE_TIMEOUT_S = 1.0
 
+# What a message box says, at most.
+MAX_DIALOG_TEXT_CHARS = 500
+
 KIND_PLOT = "plot"
 KIND_DATA_FILE = "data_file"
+KIND_DIALOG = "dialog"
 
 EVENT_OPEN = "open"
 EVENT_ACTIVE = "active"
@@ -317,6 +345,79 @@ def unified_diff(before, after):
     return text, truncated
 
 
+def button_label(text):
+    # type: (object) -> str
+    """A button's text without the ``&`` marking its keyboard mnemonic."""
+    return str(text or "").replace("&&", "\0").replace("&", "").replace("\0", "&").strip()
+
+
+def describe_dialog(widget, qt_widgets):
+    # type: (object, object) -> tuple
+    """``(name, data)`` for a modal dialog's ``open`` entry.
+
+    The name is the window title, or the C++ class when it has none. A
+    message box also gives what it says; the buttons are read from the
+    message box itself or from the dialog's button boxes, never from the
+    whole dialog.
+    """
+    try:
+        title = str(widget.windowTitle() or "").strip()
+    except Exception:
+        title = ""
+    try:
+        is_message_box = bool(widget.inherits("QMessageBox"))
+    except Exception:
+        is_message_box = False
+
+    data = {"kind": KIND_DIALOG, "event": EVENT_OPEN}
+    if is_message_box:
+        parts = []
+        for name in ("text", "informativeText"):
+            try:
+                part = str(widget.property(name) or "").strip()
+            except Exception:
+                part = ""
+            if part:
+                parts.append(part)
+        text = "\n".join(parts)
+        if len(text) > MAX_DIALOG_TEXT_CHARS:
+            text = text[:MAX_DIALOG_TEXT_CHARS] + "..."
+        if text:
+            data["text"] = text
+
+    holders = [widget]
+    if not is_message_box:
+        try:
+            holders = list(widget.findChildren(qt_widgets.QDialogButtonBox))
+        except Exception:
+            holders = []
+    labels = []
+    for holder in holders:
+        try:
+            buttons = holder.findChildren(qt_widgets.QAbstractButton)
+        except Exception:
+            continue
+        for button in buttons:
+            try:
+                label = button_label(button.text())
+            except Exception:
+                continue
+            if label:
+                labels.append(label)
+    if labels:
+        data["buttons"] = labels
+    return title or class_name(widget) or "", data
+
+
+class _Dialog(object):
+    __slots__ = ("widget", "name", "data")
+
+    def __init__(self, widget, name, data):
+        self.widget = widget
+        self.name = name
+        self.data = data  # as recorded when it came up: what it is known by
+
+
 class _View(object):
     __slots__ = ("dock", "kind", "name")
 
@@ -346,6 +447,7 @@ class ViewTracker(object):
         self._widgets = qt_widgets
         self._views = []  # type: list
         self._lists = []  # type: list
+        self._dialogs = []  # type: list  # modal dialogs on screen, oldest first
         self._current = None  # type: object
         self._pending = False
         self._active = False
@@ -466,6 +568,13 @@ class ViewTracker(object):
             logger.debug("View tracking could not look at the GUI: %s", e)
 
     def _look(self):
+        # First, and on its own: a dialog is reported whatever becomes of
+        # the walk over the widgets below.
+        try:
+            self._update_dialogs()
+        except Exception as e:
+            logger.debug("View tracking could not read the modal dialog: %s", e)
+
         try:
             widgets = self._widgets.QApplication.allWidgets()
         except Exception:
@@ -499,6 +608,43 @@ class ViewTracker(object):
 
         for name, data, source in entries:
             self._history.add(source, name, data=data)
+
+    def _update_dialogs(self):
+        # type: () -> None
+        """Record the modal dialog that came up and the ones that are gone."""
+        try:
+            active = self._widgets.QApplication.activeModalWidget()
+        except Exception:
+            active = None
+
+        known = None
+        described = None
+        if active is not None:
+            for dialog in self._dialogs:
+                if dialog.widget is active:
+                    known = dialog
+                    break
+            else:
+                # Its wrapper may have been replaced under us (see Identity):
+                # a dialog saying the same thing is the same dialog.
+                described = describe_dialog(active, self._widgets)
+                for dialog in self._dialogs:
+                    if (dialog.name, dialog.data) == described:
+                        dialog.widget = active
+                        known = dialog
+                        break
+
+        for dialog in list(self._dialogs):
+            if dialog is known or _is_visible(dialog.widget):
+                continue
+            self._dialogs.remove(dialog)
+            self._history.add(SOURCE_VIEW, dialog.name, data={"kind": KIND_DIALOG, "event": EVENT_CLOSED})
+
+        if active is None or known is not None or modal_guard.answers(active):
+            return
+        name, data = described
+        self._dialogs.append(_Dialog(active, name, data))
+        self._history.add(SOURCE_VIEW, name, data=dict(data))
 
     def _update_views(self, all_docks, pages, entries):
         # type: (list, list, list) -> list
