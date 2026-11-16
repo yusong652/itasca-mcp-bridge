@@ -191,8 +191,12 @@ class _Gui:
             QApplication=SimpleNamespace(
                 allWidgets=lambda: list(gui.widgets),
                 focusWidget=lambda: gui.focus,
-            )
+                activeModalWidget=lambda: gui.modal,
+            ),
+            QAbstractButton="QAbstractButton",
+            QDialogButtonBox="QDialogButtonBox",
         )
+        self.modal = None
 
     def view(self, kind, title, visible=True):
         dock = _Widget("itascaxd::ItascaDockWidget", title=title, visible=visible)
@@ -1045,3 +1049,94 @@ def test_an_item_list_seen_through_a_new_wrapper_keeps_one_model_hook(gui, histo
     tracker.look()
 
     assert len(item_list.model().rowsInserted.slots) == 1
+
+
+# ---------------------------------------------------------------------------
+# Modal dialogs
+# ---------------------------------------------------------------------------
+
+
+class _Button:
+    def __init__(self, label):
+        self._label = label
+
+    def text(self):
+        return self._label
+
+
+class _Dialog(_Widget):
+    """A modal dialog: a message box, or a dialog with a button box."""
+
+    def __init__(self, cls, title, text="", buttons=(), other_buttons=()):
+        super().__init__(cls, title=title)
+        self._props["text"] = text
+        self._buttons = [_Button(b) for b in buttons]
+        self._other = [_Button(b) for b in other_buttons]
+
+    def inherits(self, name):
+        return name == self._cls
+
+    def findChildren(self, kind):
+        if self._cls == "QMessageBox":
+            return list(self._buttons) if kind == "QAbstractButton" else []
+        if kind == "QDialogButtonBox":
+            return [SimpleNamespace(findChildren=lambda k: list(self._buttons))]
+        return self._buttons + self._other
+
+
+def test_modal_dialog_is_reported_once_when_it_opens_and_once_when_it_goes(gui, history):
+    _install(gui, history)
+    box = _Dialog("QMessageBox", "PFC3D Command Processing Error", "Bad keyword.", ["&OK"])
+
+    gui.modal = box
+    gui.focus_on(box)
+    gui.focus_on(None)  # a click inside the box moves the focus again
+    gui.focus_on(box)
+    assert _entries(history) == [
+        ("view", "PFC3D Command Processing Error",
+         {"kind": "dialog", "event": "open", "text": "Bad keyword.", "buttons": ["OK"]}),
+    ]
+
+    gui.modal, box.visible = None, False
+    gui.focus_on(None)
+    assert _entries(history) == [
+        ("view", "PFC3D Command Processing Error", {"kind": "dialog", "event": "closed"}),
+    ]
+
+
+def test_dialog_buttons_come_from_its_button_box_only(gui, history):
+    _install(gui, history)
+    options = _Dialog("itasca3d::OptionsDialog", "Options", buttons=["OK", "Cancel"], other_buttons=["Raise Dialog on Error"])
+
+    gui.modal = options
+    gui.focus_on(options)
+
+    assert _entries(history) == [
+        ("view", "Options", {"kind": "dialog", "event": "open", "buttons": ["OK", "Cancel"]}),
+    ]
+
+
+def test_dialog_under_another_stays_open_until_it_is_hidden(gui, history):
+    _install(gui, history)
+    options = _Dialog("itasca3d::OptionsDialog", "Options")
+    chooser = _Dialog("QFileDialog", "Select Folder")
+    gui.modal = options
+    gui.focus_on(options)
+    gui.modal = chooser
+    gui.focus_on(chooser)
+    _entries(history)
+
+    gui.modal, chooser.visible = options, False
+    gui.focus_on(options)
+
+    assert _entries(history) == [("view", "Select Folder", {"kind": "dialog", "event": "closed"})]
+
+
+def test_box_the_guard_answers_is_not_reported(gui, history, monkeypatch):
+    _install(gui, history)
+    monkeypatch.setattr(views_module.modal_guard, "answers", lambda widget: True)
+
+    gui.modal = _Dialog("QMessageBox", "Error", "Bad keyword.", ["OK"])
+    gui.focus_on(gui.modal)
+
+    assert _entries(history) == []
