@@ -29,8 +29,9 @@ command language / Python SDK rather than any product-specific API.
   with its output and handed to the client on request (`console_history`),
   so an agent sees what happened in the GUI between its own calls.
 - **GUI activity.** The plots and data files the person opens, closes or
-  switches to, the items added to a plot, and the data files executed
-  from the editor are recorded alongside, by name.
+  switches to, the items added to a plot, the data files executed from
+  the editor, and the modal dialogs that come up are recorded alongside,
+  by name.
 
 ## Architecture
 

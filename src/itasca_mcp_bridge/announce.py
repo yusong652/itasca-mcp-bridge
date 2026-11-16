@@ -184,6 +184,10 @@ ANNOUNCEMENTS = {
         "Fixed plots going blank (an empty lavender pane) after your agent ran a "
         "script while a plot was open. If a plot is still blank, restart the program once.",
     ),
+    "0.6.14": (
+        "Your agent now sees when a dialog is open in the program (an error box, "
+        "Options, a save prompt) and can tell you it is waiting for your answer.",
+    ),
 }
 
 
