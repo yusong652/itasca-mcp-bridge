@@ -188,6 +188,12 @@ ANNOUNCEMENTS = {
         "Your agent now sees when a dialog is open in the program (an error box, "
         "Options, a save prompt) and can tell you it is waiting for your answer.",
     ),
+    "0.6.15": (
+        "Fixed the 9.x window going blank after your agent ran a script in a "
+        "freshly started program: the plot vanished and plots and data files "
+        "would not open from the Project pane. Your view now stays where it is.",
+        "If the middle pane is ever stuck on '[select content]', click once inside it.",
+    ),
 }
 
 
