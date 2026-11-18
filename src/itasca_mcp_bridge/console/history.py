@@ -40,6 +40,11 @@ SOURCE_COMMAND = "command"
 SOURCE_VIEW = "view"
 SOURCE_PLOT_ITEM = "plot_item"
 
+# "view" events that describe the window as it was -- what was open, in
+# front, renamed -- as opposed to something the person did (a file saved
+# or executed). They say nothing about the window of a later start.
+WINDOW_STATE_EVENTS = ("open", "active", "closed", "renamed")
+
 
 class ConsoleHistory:
     """Append-only history of user console input with a delivery cursor.
@@ -67,6 +72,7 @@ class ConsoleHistory:
 
         self._load()
         self._load_cursor()
+        self._drop_stale_window_state()
         logger.info(
             "ConsoleHistory ready (%d entries, cursor=%d)",
             len(self._entries), self._last_delivered_id,
@@ -208,6 +214,28 @@ class ConsoleHistory:
         except (OSError, ValueError, AttributeError):
             pass
 
+    def _drop_stale_window_state(self):
+        """Drop the undelivered window state of an earlier start.
+
+        Everything loaded from disk was recorded before this start. What
+        the person typed, saved or executed then is still worth telling
+        the client. The state of that window is not: a dialog reported
+        open that no longer exists (the save prompt of the window being
+        closed never gets its "closed"), plots and files reported open or
+        in front in a process that is gone. The view tracker reports the
+        present window afresh.
+        """
+        kept = [
+            e for e in self._entries
+            if e["id"] <= self._last_delivered_id or not _is_window_state(e)
+        ]
+        if len(kept) == len(self._entries):
+            return
+        logger.info("Dropped %d undelivered window-state entries of an earlier start",
+                    len(self._entries) - len(kept))
+        self._entries = kept
+        self._rewrite_file()
+
     def _save_cursor(self):
         try:
             with open(self._cursor_path, "w", encoding="utf-8") as f:
@@ -219,12 +247,27 @@ class ConsoleHistory:
         if len(self._entries) <= self._max_entries:
             return
         self._entries = self._entries[-self._max_entries:]
+        self._rewrite_file()
+
+    def _rewrite_file(self):
         try:
             with open(self._path, "w", encoding="utf-8") as f:
                 for entry in self._entries:
                     f.write(json.dumps(entry, ensure_ascii=False) + "\n")
         except OSError as e:
             logger.error("Failed to rewrite console history: %s", e)
+
+
+def _is_window_state(entry):
+    # type: (dict) -> bool
+    """True for an entry that only describes the GUI window at the time."""
+    source = entry.get("source")
+    if source == SOURCE_PLOT_ITEM:
+        return True
+    if source != SOURCE_VIEW:
+        return False
+    data = entry.get("data")
+    return isinstance(data, dict) and data.get("event") in WINDOW_STATE_EVENTS
 
 
 def _serialize(value):

@@ -10,7 +10,9 @@ from itasca_mcp_bridge.console.history import (
     CURSOR_FILENAME,
     HISTORY_FILENAME,
     SOURCE_COMMAND,
+    SOURCE_PLOT_ITEM,
     SOURCE_PYTHON,
+    SOURCE_VIEW,
     ConsoleHistory,
 )
 
@@ -87,6 +89,32 @@ def test_persists_entries_and_cursor_across_restart(tmp_path):
     assert [e["input"] for e in result["entries"]] == ["unseen"]
     # Ids keep counting from the persisted maximum.
     assert second.add(SOURCE_PYTHON, "next")["id"] == 3
+
+
+def test_undelivered_window_state_does_not_survive_a_restart(tmp_path):
+    # The client of the next start was told of a dialog "open" that had
+    # gone with the old window, and of plots open in a dead process.
+    first = ConsoleHistory(directory=str(tmp_path))
+    first.add(SOURCE_VIEW, "P1", data={"kind": "plot", "event": "open"})
+    first.consume()  # delivered: history, left alone
+    first.add(SOURCE_COMMAND, "model cycle 10")
+    first.add(SOURCE_VIEW, "PFC3D 9.8.54", data={"kind": "dialog", "event": "open"})
+    first.add(SOURCE_VIEW, "P1", data={"kind": "plot", "event": "active"})
+    first.add(SOURCE_PLOT_ITEM, "P1", data={"plot": "P1", "added": ["Ball"]})
+    first.add(SOURCE_VIEW, "run", data={"kind": "data_file", "event": "saved", "diff": "+x"})
+    first.add(SOURCE_VIEW, "run", data={"kind": "data_file", "event": "executed"})
+
+    second = ConsoleHistory(directory=str(tmp_path))
+    delivered = second.consume()["entries"]
+    assert [(e["source"], e["input"]) for e in delivered] == [
+        (SOURCE_COMMAND, "model cycle 10"),
+        (SOURCE_VIEW, "run"),
+        (SOURCE_VIEW, "run"),
+    ]
+    assert [e["data"]["event"] for e in delivered[1:]] == ["saved", "executed"]
+    # Gone from disk as well, and ids keep counting past the dropped ones.
+    assert len(ConsoleHistory(directory=str(tmp_path))) == 4
+    assert second.add(SOURCE_PYTHON, "next")["id"] == 8
 
 
 def test_load_skips_torn_and_foreign_lines(tmp_path):

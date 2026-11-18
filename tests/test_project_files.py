@@ -38,6 +38,35 @@ class _Obj:
     def windowTitle(self):
         return getattr(self, "title", "")
 
+    def objectName(self):
+        return getattr(self, "name", "")
+
+    def parent(self):
+        return getattr(self, "parent_widget", None)
+
+
+class _Action:
+    """A view's "Split right": the GUI adds a tile next to the view."""
+
+    def __init__(self, gui, text):
+        self.gui = gui
+        self._text = text
+
+    def text(self):
+        return self._text
+
+    def trigger(self):
+        self.gui.events.append("split")
+        self.gui.spare_tile = True
+
+
+class _Menu:
+    def __init__(self, actions):
+        self._actions = actions
+
+    def actions(self):
+        return self._actions
+
 
 class _Index:
     def __init__(self, text, tip, children=()):
@@ -115,18 +144,22 @@ class _Editor(_Obj):
         dock = _Obj("itascaxd::ItascaDockWidget")
         dock.title = path
         self.gui.widgets.append(dock)
-        for other in self.gui.docks():
-            if other is not dock:
-                other.visible = False  # the new editor took the tile
+        if not self.gui.spare_tile:
+            for other in self.gui.docks():
+                if other is not dock:
+                    other.visible = False  # the new editor took the tile
         self.gui.editor_dock = dock
 
     def closeDataFile(self, path):
         self.calls.append(("close", path))
         self.gui.events.append("close")
         self.gui.widgets.remove(self.gui.editor_dock)
+        self.gui.spare_tile = False  # 9.x: the editor's own tile goes with it
         if self.gui.restores_previous_view:
             for dock in self.gui.docks():
                 dock.visible = True
+        if self.gui.destroys_editor_dock_at_once:
+            self.gui.destroy_editor_dock()
 
 
 class _Window:
@@ -144,6 +177,10 @@ class _Gui:
     def __init__(self, layout, restores_previous_view):
         self.listed_paths = []
         self.restores_previous_view = restores_previous_view
+        # The real close deletes the editor's dock a little later; tests
+        # that care about that gap switch this off and destroy it themselves.
+        self.destroys_editor_dock_at_once = True
+        self.spare_tile = False  # a split has left an empty tile for the editor
         self.widgets = []
         self.activated = []
         self.events = []  # open/close/enumerate/activate, in order
@@ -161,10 +198,23 @@ class _Gui:
             ),
             QHeaderView=object,
             QTreeView=object,
+            QMenu=_Menu,
         )
 
     def docks(self):
         return [w for w in self.widgets if w.metaObject().className().endswith("ItascaDockWidget")]
+
+    def put_the_plot_in_a_tile(self):
+        """9.x as it really is: the plot's dock sits in a tile and can be split."""
+        wrapper = _Obj("itascaxd::ContentWrapper")
+        wrapper.parent_widget = _Obj("itascaxd::TiledViewer")
+        self.plot.parent_widget = wrapper
+        self.plot.name = "Plot_Plot01"
+        menus = [_Menu([_Action(self, "Center")]), _Menu([_Action(self, "Split left"), _Action(self, "Split right")])]
+        self.plot.findChildren = lambda cls: menus
+
+    def destroy_editor_dock(self):
+        self.timers.fire(self.editor_dock, "destroyed()")
 
     def pane(self):
         if self.layout == "9.x":
@@ -179,11 +229,38 @@ class _Gui:
         return [_Obj("itasca3d::ProjectPage")]  # unknown layout: no readable list
 
 
+class _Timer:
+    """A ``QTimer`` object: started by a connection, due when the test flushes."""
+
+    def __init__(self, timers, parent):
+        self.timers = timers
+        self.parent = parent
+        self.interval = 0
+
+    def setSingleShot(self, on):
+        pass
+
+    def setInterval(self, ms):
+        self.interval = ms
+
+    def start(self):
+        self.timers.queued.append((self.interval, (self.timeout,)))
+
+    def timeout(self):
+        self.timers.fire(self, "timeout()")
+
+    def deleteLater(self):
+        pass
+
+
 class _Timers:
-    """``QTimer.singleShot`` fakes: callbacks run when the test flushes them."""
+    """``QTimer`` fakes: callbacks run when the test flushes them."""
 
     def __init__(self):
         self.queued = []
+
+    def __call__(self, parent=None):
+        return _Timer(self, parent)
 
     def singleShot(self, ms, *target):
         # (ms, callable), or (ms, receiver, slot): a timer of Qt's own
@@ -238,12 +315,26 @@ def _core(gui):
     gui.timers = _Timers()
 
     def on_slot(obj, slot):
+        if slot == "trigger()":
+            obj.trigger()
+            return
         assert slot == "activate()"
         gui.activated.append(obj)
         gui.events.append("activate")
         obj.visible = True
 
     gui.timers.on_slot = on_slot
+
+    def fire(sender, signal):
+        # A signal of a GUI object (a dock's destroyed, a timer's timeout).
+        for source, sig, obj, slot in list(connections):
+            if source is sender and sig == signal:
+                if slot == "activate()":
+                    on_slot(obj, slot)
+                else:
+                    getattr(obj, slot.split("(")[0])()
+
+    gui.timers.fire = fire
 
     def invoke(obj, method, kind, *packed):
         return True
@@ -300,7 +391,9 @@ def test_registers_by_opening_and_closing_through_queued_slots(tmp_path):
     gui.timers.flush()
 
     assert gui.editor.calls == [("open", target, True), ("close", target)]
-    assert set(gui.connection_types) == {2}  # Qt.QueuedConnection, never direct
+    # The editor's slots: Qt.QueuedConnection, never direct. (The timer's
+    # connections that follow run from the event loop on their own.)
+    assert gui.connection_types[:2] == [2, 2]
     assert normalize(str(script)) in registrar.listed()
     assert not any(d.title == target for d in gui.docks())  # no editor tab left
 
@@ -356,6 +449,61 @@ def test_a_view_the_editor_displaced_is_brought_back(tmp_path):
     assert gui.plot.visible is True
 
 
+def test_on_9x_the_editor_gets_a_tile_of_its_own(tmp_path):
+    # Opened over the view in front, the editor left a GUI nobody had
+    # clicked into on "[select content]" with nothing in the Project pane
+    # opening any more, and took a tile away from a two-tile layout (PFC
+    # 9.8.54, 2026-11-18). Split first: no view is displaced at all.
+    script = tmp_path / "script.dat"
+    script.write_text("model new\n")
+    gui, registrar = _registrar("9.x")
+    gui.put_the_plot_in_a_tile()
+
+    assert registrar.register(str(script)) is True
+    assert gui.editor.calls == []  # the open waits for the split
+    gui.timers.flush()
+
+    target = str(script).replace("\\", "/")
+    assert [e for e in gui.events if e != "enumerate"] == ["split", "open", "close"]
+    assert gui.editor.calls == [("open", target, True), ("close", target)]
+    assert gui.plot.visible is True
+    assert gui.activated == []  # nothing was parked, nothing to bring back
+    assert gui.spare_tile is False
+
+
+def test_registrations_run_one_at_a_time(tmp_path):
+    # Two in the same loop passes split two tiles and left one behind
+    # empty (PFC 9.8.54): the second waits for the first to settle.
+    first = tmp_path / "first.dat"
+    second = tmp_path / "second.dat"
+    first.write_text("model new\n")
+    second.write_text("model new\n")
+    gui, registrar = _registrar("9.x")
+    gui.put_the_plot_in_a_tile()
+
+    assert registrar.register(str(first)) is True
+    assert registrar.register(str(second)) is True
+    gui.timers.flush()
+
+    assert [e for e in gui.events if e != "enumerate"] == ["split", "open", "close", "split", "open", "close"]
+    assert [call[1].rsplit("/", 1)[-1] for call in gui.editor.calls if call[0] == "open"] == ["first.dat", "second.dat"]
+
+
+def test_an_empty_tile_is_not_split(tmp_path):
+    # "[select content]": the editor takes the empty tile and the close
+    # hands the placeholder back.
+    script = tmp_path / "script.dat"
+    script.write_text("model new\n")
+    gui, registrar = _registrar("9.x")
+    gui.put_the_plot_in_a_tile()
+    gui.plot.name = "Placeholder #3 dock"
+
+    registrar.register(str(script))
+    gui.timers.flush()
+
+    assert "split" not in gui.events
+
+
 def test_python_touches_no_widget_after_the_close(tmp_path):
     # Enumerating docks after the close crashed 9.8 once the session had
     # seen heavy dock churn (issue #227): the dock lookup runs before the
@@ -383,9 +531,32 @@ def test_the_view_is_reactivated_after_the_close_is_done(tmp_path):
     gui.timers.queued.pop(0)[1][0]()  # the loop pass after the open
 
     assert "close" in gui.events and "activate" not in gui.events
-    delay, (receiver, slot) = [t for t in gui.timers.queued if len(t[1]) == 2][0]
-    assert receiver is gui.plot and slot == "activate()"
-    assert delay >= 200  # the editor's dock is deleted some 100 ms after the close
+    delay = [ms for ms, target in gui.timers.queued if target[0] != registrar][-1]
+    assert delay >= 200
+    gui.timers.flush()
+    assert gui.activated == [gui.plot]
+
+
+def test_the_reactivation_waits_for_the_editor_dock_to_be_destroyed(tmp_path):
+    # The delay counts from the end of the editor's dock, not from the
+    # close being asked for: with the GUI thread held up in between, a
+    # timer set at the emit fired next to the close and emptied the tile
+    # for the rest of the session (PFC 9.8.54, 2026-11-18).
+    script = tmp_path / "script.dat"
+    script.write_text("model new\n")
+    gui, registrar = _registrar("9.x")
+    gui.destroys_editor_dock_at_once = False
+
+    registrar.register(str(script))
+    gui.timers.flush()  # however long: every timer that is due has run
+
+    assert "close" in gui.events
+    assert gui.activated == []
+
+    gui.destroy_editor_dock()
+    assert gui.activated == []  # not in the same pass as the destruction
+    gui.timers.flush()
+    assert gui.activated == [gui.plot]
 
 
 def test_no_reactivation_when_the_gui_restores_the_view_itself(tmp_path):
