@@ -127,6 +127,8 @@ class _Editor(_Obj):
         if self.gui.restores_previous_view:
             for dock in self.gui.docks():
                 dock.visible = True
+        if self.gui.destroys_editor_dock_at_once:
+            self.gui.destroy_editor_dock()
 
 
 class _Window:
@@ -144,6 +146,9 @@ class _Gui:
     def __init__(self, layout, restores_previous_view):
         self.listed_paths = []
         self.restores_previous_view = restores_previous_view
+        # The real close deletes the editor's dock a little later; tests
+        # that care about that gap switch this off and destroy it themselves.
+        self.destroys_editor_dock_at_once = True
         self.widgets = []
         self.activated = []
         self.events = []  # open/close/enumerate/activate, in order
@@ -166,6 +171,9 @@ class _Gui:
     def docks(self):
         return [w for w in self.widgets if w.metaObject().className().endswith("ItascaDockWidget")]
 
+    def destroy_editor_dock(self):
+        self.timers.fire(self.editor_dock, "destroyed()")
+
     def pane(self):
         if self.layout == "9.x":
             data_files = _Index("Data Files", None, [_Index(p.rsplit("/", 1)[-1], p) for p in self.listed_paths])
@@ -179,11 +187,38 @@ class _Gui:
         return [_Obj("itasca3d::ProjectPage")]  # unknown layout: no readable list
 
 
+class _Timer:
+    """A ``QTimer`` object: started by a connection, due when the test flushes."""
+
+    def __init__(self, timers, parent):
+        self.timers = timers
+        self.parent = parent
+        self.interval = 0
+
+    def setSingleShot(self, on):
+        pass
+
+    def setInterval(self, ms):
+        self.interval = ms
+
+    def start(self):
+        self.timers.queued.append((self.interval, (self.timeout,)))
+
+    def timeout(self):
+        self.timers.fire(self, "timeout()")
+
+    def deleteLater(self):
+        pass
+
+
 class _Timers:
-    """``QTimer.singleShot`` fakes: callbacks run when the test flushes them."""
+    """``QTimer`` fakes: callbacks run when the test flushes them."""
 
     def __init__(self):
         self.queued = []
+
+    def __call__(self, parent=None):
+        return _Timer(self, parent)
 
     def singleShot(self, ms, *target):
         # (ms, callable), or (ms, receiver, slot): a timer of Qt's own
@@ -245,6 +280,17 @@ def _core(gui):
 
     gui.timers.on_slot = on_slot
 
+    def fire(sender, signal):
+        # A signal of a GUI object (a dock's destroyed, a timer's timeout).
+        for source, sig, obj, slot in list(connections):
+            if source is sender and sig == signal:
+                if slot == "activate()":
+                    on_slot(obj, slot)
+                else:
+                    getattr(obj, slot.split("(")[0])()
+
+    gui.timers.fire = fire
+
     def invoke(obj, method, kind, *packed):
         return True
 
@@ -300,7 +346,9 @@ def test_registers_by_opening_and_closing_through_queued_slots(tmp_path):
     gui.timers.flush()
 
     assert gui.editor.calls == [("open", target, True), ("close", target)]
-    assert set(gui.connection_types) == {2}  # Qt.QueuedConnection, never direct
+    # The editor's slots: Qt.QueuedConnection, never direct. (The timer's
+    # connections that follow run from the event loop on their own.)
+    assert gui.connection_types[:2] == [2, 2]
     assert normalize(str(script)) in registrar.listed()
     assert not any(d.title == target for d in gui.docks())  # no editor tab left
 
@@ -383,9 +431,32 @@ def test_the_view_is_reactivated_after_the_close_is_done(tmp_path):
     gui.timers.queued.pop(0)[1][0]()  # the loop pass after the open
 
     assert "close" in gui.events and "activate" not in gui.events
-    delay, (receiver, slot) = [t for t in gui.timers.queued if len(t[1]) == 2][0]
-    assert receiver is gui.plot and slot == "activate()"
-    assert delay >= 200  # the editor's dock is deleted some 100 ms after the close
+    delay = [ms for ms, target in gui.timers.queued if target[0] != registrar][-1]
+    assert delay >= 200
+    gui.timers.flush()
+    assert gui.activated == [gui.plot]
+
+
+def test_the_reactivation_waits_for_the_editor_dock_to_be_destroyed(tmp_path):
+    # The delay counts from the end of the editor's dock, not from the
+    # close being asked for: with the GUI thread held up in between, a
+    # timer set at the emit fired next to the close and emptied the tile
+    # for the rest of the session (PFC 9.8.54, 2026-11-18).
+    script = tmp_path / "script.dat"
+    script.write_text("model new\n")
+    gui, registrar = _registrar("9.x")
+    gui.destroys_editor_dock_at_once = False
+
+    registrar.register(str(script))
+    gui.timers.flush()  # however long: every timer that is due has run
+
+    assert "close" in gui.events
+    assert gui.activated == []
+
+    gui.destroy_editor_dock()
+    assert gui.activated == []  # not in the same pass as the destruction
+    gui.timers.flush()
+    assert gui.activated == [gui.plot]
 
 
 def test_no_reactivation_when_the_gui_restores_the_view_itself(tmp_path):

@@ -49,9 +49,14 @@ How (measured on PFC 6.0 and 7.0 with PySide2 5.11, PFC 9.8 with PySide6)
       (2026-11-15; the state lasts until the product is restarted).
 
     Both at once: before the close is emitted, each parked dock gets a
-    Qt-side single-shot timer onto its own ``activate()`` slot
-    (``QTimer.singleShot(ms, dock, SLOT("activate()"))``). The timer
-    lives in Qt and dies with the dock; no wrapper outlives the pass.
+    single-shot ``QTimer`` of its own whose timeout is its ``activate()``
+    slot, and the editor dock's ``destroyed()`` starts it. The delay
+    counts from the destruction, not from the emit: a timer set at the
+    emit fires next to the close whenever the GUI thread is held up in
+    between, with the same empty tile as a result (2026-11-18, a 2 s
+    stall 100 ms after the registration, twice out of two). Timer and
+    connections live in Qt and die with the docks; no wrapper outlives
+    the pass.
 
     Whether a file is already listed is read from the Project pane, never
     guessed: the GUI adds nothing twice, and a file the person has open in
@@ -134,6 +139,9 @@ SETTLE_DELAY_MS = 500
 # the tile empty for the rest of the session.
 RESTORE_DELAY_MS = 500
 ACTIVATE_SLOT = "activate()"
+DESTROYED_SIGNAL = "destroyed()"
+# From the editor dock's destruction to the ``activate``.
+AFTER_DESTROY_DELAY_MS = 300
 
 _registrar = None  # type: object
 
@@ -287,37 +295,62 @@ class _Registrar(object):
 
     def _restore_views(self, before):
         # type: (set) -> None
-        """Set a timer on each view the open parked to ``activate`` it.
+        """Have each view the open parked ``activate`` once the editor is gone.
 
         Runs between the open and the close: the editor holds the front
         tile, the views it displaced are parked, nothing is being
         destroyed. The docks are looked up again by title: no wrapper of
         one was held across the loop pass (see the module docstring).
-        6.0/7.0 need no restoring and ``_activate_later`` does nothing
-        there (no ``Q_ARG``).
+        The editor's dock is the one that is visible now and was not
+        before. 6.0/7.0 need no restoring and ``_activate_later`` does
+        nothing there (no ``Q_ARG``).
         """
         try:
-            for dock in self._docks():
+            docks = self._docks()
+            editors = [d for d in docks if _is_visible(d) and view_title(d) not in before]
+            editor = editors[0] if len(editors) == 1 else None
+            for dock in docks:
                 if view_title(dock) in before and not _is_visible(dock):
-                    self._activate_later(dock)
+                    self._activate_later(dock, editor)
         except Exception as e:
             logger.debug("Could not restore the view after registering: %s", e)
 
-    def _activate_later(self, dock):
-        # type: (object) -> None
+    def _activate_later(self, dock, editor=None):
+        # type: (object, object) -> None
         """Have Qt call the GUI's ``activate()`` on a parked dock, later.
 
-        A single-shot timer with the dock as receiver: it fires once the
-        close that follows has finished (see ``RESTORE_DELAY_MS``), Qt
-        drops it if the dock is destroyed first, and neither a wrapper
-        nor a connection is kept on the Python side. The 6.0/7.0
-        products (PySide2, no ``Q_ARG``) do not need this: there the
-        close destroys the editor's dock and the previous view comes
-        back.
+        "Later" is counted from the end of the editor's dock, not from
+        the close being asked for: a single-shot timer owned by the
+        parked dock is started by the editor dock's ``destroyed()`` and
+        its timeout is the ``activate()``. A delay counted from the
+        emit is not safe: with the GUI thread held up past it (the next
+        snippet, a long command) the ``activate`` ran next to the close
+        and left the tile empty for the rest of the session
+        (2026-11-18). Timer and connections live in Qt and go with the
+        docks; no wrapper is kept on the Python side. Without an editor
+        dock to hang it on, the timer is started from here as before.
+        The 6.0/7.0 products (PySide2, no ``Q_ARG``) do not need this:
+        there the close destroys the editor's dock and the previous view
+        comes back.
         """
         core = self._core
         if getattr(core, "Q_ARG", None) is None:
             return
+        try:
+            if editor is not None:
+                timer = core.QTimer(dock)
+                timer.setSingleShot(True)
+                timer.setInterval(AFTER_DESTROY_DELAY_MS)
+                connect = core.QObject.connect
+                if (
+                    connect(timer, core.SIGNAL("timeout()"), dock, core.SLOT(ACTIVATE_SLOT))
+                    and connect(timer, core.SIGNAL("timeout()"), timer, core.SLOT("deleteLater()"))
+                    and connect(editor, core.SIGNAL(DESTROYED_SIGNAL), timer, core.SLOT("start()"))
+                ):
+                    return
+                timer.deleteLater()
+        except Exception as e:
+            logger.debug("activate could not be tied to the editor's end: %s", e)
         try:
             core.QTimer.singleShot(RESTORE_DELAY_MS, dock, core.SLOT(ACTIVATE_SLOT))
         except Exception as e:
