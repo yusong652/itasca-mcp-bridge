@@ -6,6 +6,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.15] - 2026-11-18
+
+### Fixed
+- On the 9.x GUI, the first script an agent ran in a freshly started
+  product left the window unusable: the plot gone, the middle pane on
+  "[select content]", the panel on the right blank, and no plot or data
+  file in the Project pane opening on a double-click, until the person
+  clicked into the empty pane (reported on PFC 9.8.53, reproduced on PFC
+  9.8.54 after every restart). Listing the script in the project's Data
+  Files opens and closes an editor; the editor took the tile of the view
+  in front, and the view was brought back with the GUI's `activate()`,
+  which puts it in the GUI's active tile -- and a GUI nobody has clicked
+  into has none. With two tiles the close also removed the editor's tile
+  and the view brought back landed on the other tile's view. The editor
+  now gets a tile of its own: the GUI's "Split right" action of the view
+  in front is triggered first, the editor opens in the new tile, and the
+  close takes that tile away again. No view is displaced, so none has to
+  come back; the person sees the spare tile flash for a moment. The old
+  path remains for a layout with nothing to split. Registrations run one
+  at a time: two in the same loop passes left an empty tile behind.
+  - Verified live on PFC 9.8.54: a fresh start with the middle never
+    clicked, a new project run end to end twice across a restart (a
+    build task, then a three-case task with nested `program call` into
+    `.dat` and `.fis` files, seven files listed at its end), a data file
+    editor in front, two tiles, and two files at once. PFC 7.00.161 has
+    no tiles and never had the problem. Not run on 6.0, 9.6 or 9.7.
+- Where the old path is still taken, the view's reactivation is counted
+  from the end of the editor's dock, not from the moment the close is
+  asked for: with the GUI thread held up in between, the fixed delay
+  fired next to the close and left the tile empty for the session.
+- The first call after the product is restarted no longer reports the
+  window of the previous run: the save prompt of the closed window as a
+  dialog still open, plots and files as open in a process that is gone.
+  Undelivered entries that only describe the window are dropped when the
+  history is loaded; what the person typed, saved or executed is kept.
+
 ## [0.6.14] - 2026-11-16
 
 ### Added
