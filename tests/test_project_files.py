@@ -38,6 +38,35 @@ class _Obj:
     def windowTitle(self):
         return getattr(self, "title", "")
 
+    def objectName(self):
+        return getattr(self, "name", "")
+
+    def parent(self):
+        return getattr(self, "parent_widget", None)
+
+
+class _Action:
+    """A view's "Split right": the GUI adds a tile next to the view."""
+
+    def __init__(self, gui, text):
+        self.gui = gui
+        self._text = text
+
+    def text(self):
+        return self._text
+
+    def trigger(self):
+        self.gui.events.append("split")
+        self.gui.spare_tile = True
+
+
+class _Menu:
+    def __init__(self, actions):
+        self._actions = actions
+
+    def actions(self):
+        return self._actions
+
 
 class _Index:
     def __init__(self, text, tip, children=()):
@@ -115,15 +144,17 @@ class _Editor(_Obj):
         dock = _Obj("itascaxd::ItascaDockWidget")
         dock.title = path
         self.gui.widgets.append(dock)
-        for other in self.gui.docks():
-            if other is not dock:
-                other.visible = False  # the new editor took the tile
+        if not self.gui.spare_tile:
+            for other in self.gui.docks():
+                if other is not dock:
+                    other.visible = False  # the new editor took the tile
         self.gui.editor_dock = dock
 
     def closeDataFile(self, path):
         self.calls.append(("close", path))
         self.gui.events.append("close")
         self.gui.widgets.remove(self.gui.editor_dock)
+        self.gui.spare_tile = False  # 9.x: the editor's own tile goes with it
         if self.gui.restores_previous_view:
             for dock in self.gui.docks():
                 dock.visible = True
@@ -149,6 +180,7 @@ class _Gui:
         # The real close deletes the editor's dock a little later; tests
         # that care about that gap switch this off and destroy it themselves.
         self.destroys_editor_dock_at_once = True
+        self.spare_tile = False  # a split has left an empty tile for the editor
         self.widgets = []
         self.activated = []
         self.events = []  # open/close/enumerate/activate, in order
@@ -166,10 +198,20 @@ class _Gui:
             ),
             QHeaderView=object,
             QTreeView=object,
+            QMenu=_Menu,
         )
 
     def docks(self):
         return [w for w in self.widgets if w.metaObject().className().endswith("ItascaDockWidget")]
+
+    def put_the_plot_in_a_tile(self):
+        """9.x as it really is: the plot's dock sits in a tile and can be split."""
+        wrapper = _Obj("itascaxd::ContentWrapper")
+        wrapper.parent_widget = _Obj("itascaxd::TiledViewer")
+        self.plot.parent_widget = wrapper
+        self.plot.name = "Plot_Plot01"
+        menus = [_Menu([_Action(self, "Center")]), _Menu([_Action(self, "Split left"), _Action(self, "Split right")])]
+        self.plot.findChildren = lambda cls: menus
 
     def destroy_editor_dock(self):
         self.timers.fire(self.editor_dock, "destroyed()")
@@ -273,6 +315,9 @@ def _core(gui):
     gui.timers = _Timers()
 
     def on_slot(obj, slot):
+        if slot == "trigger()":
+            obj.trigger()
+            return
         assert slot == "activate()"
         gui.activated.append(obj)
         gui.events.append("activate")
@@ -402,6 +447,61 @@ def test_a_view_the_editor_displaced_is_brought_back(tmp_path):
 
     assert gui.activated == [gui.plot]
     assert gui.plot.visible is True
+
+
+def test_on_9x_the_editor_gets_a_tile_of_its_own(tmp_path):
+    # Opened over the view in front, the editor left a GUI nobody had
+    # clicked into on "[select content]" with nothing in the Project pane
+    # opening any more, and took a tile away from a two-tile layout (PFC
+    # 9.8.54, 2026-11-18). Split first: no view is displaced at all.
+    script = tmp_path / "script.dat"
+    script.write_text("model new\n")
+    gui, registrar = _registrar("9.x")
+    gui.put_the_plot_in_a_tile()
+
+    assert registrar.register(str(script)) is True
+    assert gui.editor.calls == []  # the open waits for the split
+    gui.timers.flush()
+
+    target = str(script).replace("\\", "/")
+    assert [e for e in gui.events if e != "enumerate"] == ["split", "open", "close"]
+    assert gui.editor.calls == [("open", target, True), ("close", target)]
+    assert gui.plot.visible is True
+    assert gui.activated == []  # nothing was parked, nothing to bring back
+    assert gui.spare_tile is False
+
+
+def test_registrations_run_one_at_a_time(tmp_path):
+    # Two in the same loop passes split two tiles and left one behind
+    # empty (PFC 9.8.54): the second waits for the first to settle.
+    first = tmp_path / "first.dat"
+    second = tmp_path / "second.dat"
+    first.write_text("model new\n")
+    second.write_text("model new\n")
+    gui, registrar = _registrar("9.x")
+    gui.put_the_plot_in_a_tile()
+
+    assert registrar.register(str(first)) is True
+    assert registrar.register(str(second)) is True
+    gui.timers.flush()
+
+    assert [e for e in gui.events if e != "enumerate"] == ["split", "open", "close", "split", "open", "close"]
+    assert [call[1].rsplit("/", 1)[-1] for call in gui.editor.calls if call[0] == "open"] == ["first.dat", "second.dat"]
+
+
+def test_an_empty_tile_is_not_split(tmp_path):
+    # "[select content]": the editor takes the empty tile and the close
+    # hands the placeholder back.
+    script = tmp_path / "script.dat"
+    script.write_text("model new\n")
+    gui, registrar = _registrar("9.x")
+    gui.put_the_plot_in_a_tile()
+    gui.plot.name = "Placeholder #3 dock"
+
+    registrar.register(str(script))
+    gui.timers.flush()
+
+    assert "split" not in gui.events
 
 
 def test_python_touches_no_widget_after_the_close(tmp_path):

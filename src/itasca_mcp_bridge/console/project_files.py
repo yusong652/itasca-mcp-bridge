@@ -19,13 +19,37 @@ How (measured on PFC 6.0 and 7.0 with PySide2 5.11, PFC 9.8 with PySide6)
     also executing the file (``program call`` with a bad label gets the
     file listed, and an error in the console with it).
 
-    On 9.x the editor takes the tile of whatever view was in front and
-    the close leaves that tile empty, the previous view parked; the GUI's
-    own ``activate()`` slot on the parked dock brings it back, so every
-    dock the open parked is reactivated. On 6.0/7.0 the close destroys
-    the editor's dock and the previous view returns by itself.
+    On 6.0/7.0 the close destroys the editor's dock and the previous view
+    returns by itself. On 9.x the views sit in tiles, and there the editor
+    is given a tile of its own: the GUI's "Split right" action of a view
+    in a tile is triggered first, the editor opens in the new tile, and
+    the close takes that tile away again. No view is displaced, so there
+    is none to bring back (measured on PFC 9.8.54, 2026-11-18, one tile
+    and two, in a session nobody had clicked into and in one somebody
+    had).
 
-    Two constraints fix when and how (both measured on PFC 9.8):
+    Opening the editor over the view in front, as this module did before,
+    cannot be made good afterwards:
+
+    - The close leaves that tile on "[select content]" with the view
+      parked, and the GUI's ``activate()`` on the parked dock puts it in
+      the *active* tile. A GUI nobody has clicked into has no active
+      tile -- the product is started, the bridge is started from the
+      Python pane, the agent runs a task -- and the ``activate()`` does
+      nothing: the plot stays parked, and the plots and data files in
+      the Project pane are dead to a double-click until the person
+      clicks into the empty tile (every fresh session; the same state
+      follows a ``plot delete`` of the plot in front, so it is the
+      GUI's, not this module's). The GUI's open-by-name slots
+      (``PlotModule.openPlot(QString,int)`` with 1) do find a tile then,
+      but they move a view that is shown elsewhere, and
+    - with two tiles the close removes the editor's tile altogether;
+      what is brought back then lands on the remaining tile's view.
+
+    That older path is kept for a layout with no view to split (and a
+    product without the action): the editor then takes the tile in
+    front and every dock the open parked is reactivated, under two
+    constraints (both measured on PFC 9.8):
 
     - The parked views are found between the open and the close, when
       every dock is alive. After the close Python touches no widget: the
@@ -130,6 +154,14 @@ DATA_FILES_NODE = "Data Files"
 OPEN_SLOT = "openDataFile(QString,bool)"
 CLOSE_SLOT = "closeDataFile(QString)"
 
+# 9.x: the views sit in tiles of a TiledViewer. A view's dock carries the
+# split actions in a menu of its title bar; an empty tile holds a
+# placeholder dock ("[select content]"), which is not split.
+TILED_VIEWER_CLASS = "TiledViewer"
+PLACEHOLDER_DOCK_PREFIX = "Placeholder"
+SPLIT_ACTION_TEXT = "Split right"
+TRIGGER_SLOT = "trigger()"
+
 # The open and close have run long before this and the GUI has listed
 # the file: the pending guard against re-queuing the path can be let go.
 SETTLE_DELAY_MS = 500
@@ -198,6 +230,34 @@ def _is_visible(widget):
         return True  # a dead wrapper is not a parked view to bring back
 
 
+def object_name(obj):
+    # type: (object) -> str
+    try:
+        return str(obj.objectName() or "")
+    except Exception:
+        return ""
+
+
+def _in_tile(dock):
+    # type: (object) -> bool
+    """True for a dock that sits in a tile of the 9.x viewer.
+
+    The other docks of the window (Project, the console panes) are of
+    the same class and are not split.
+    """
+    try:
+        parent = dock.parent()
+        for _ in range(8):
+            if parent is None:
+                return False
+            if class_name(parent) == TILED_VIEWER_CLASS:
+                return True
+            parent = parent.parent()
+    except Exception:
+        pass
+    return False
+
+
 def view_title(dock):
     # type: (object) -> str
     try:
@@ -227,6 +287,7 @@ class _Registrar(object):
         self._unreadable = False  # pane layout not recognised: stay out
         self._pending = set()  # queued, not yet settled (normalized paths)
         self._deferred = []  # held back while a task was executing
+        self._waiting = []  # behind the registration in flight (normalized paths)
 
     # -- public -------------------------------------------------------------
 
@@ -252,6 +313,13 @@ class _Registrar(object):
             if key not in self._deferred:
                 self._deferred.append(key)
             return False
+        if self._pending:
+            # One at a time: two registrations in the same loop passes
+            # split two tiles, both editors open in the second, and the
+            # first is left behind empty (PFC 9.8.54, 2026-11-18).
+            if key not in self._waiting:
+                self._waiting.append(key)
+            return True
         listed = self.listed()
         if listed is None:
             self._unreadable = True
@@ -264,10 +332,8 @@ class _Registrar(object):
 
         before = self._visible_dock_titles()
         target = gui_path(path)
-        if not self._emit("open_file", target, True):
-            return False
-        self._pending.add(key)
         registrar = self
+        core = self._core
 
         def restore_and_close():
             # One event-loop pass after the open ran, not in the same one:
@@ -282,16 +348,74 @@ class _Registrar(object):
             finally:
                 registrar._emit("close_file", target)
 
+        def open_then_close():
+            # The pass after the split, so the editor finds the new tile.
+            if registrar._emit("open_file", target, True):
+                try:
+                    core.QTimer.singleShot(0, restore_and_close)
+                except Exception:
+                    registrar._emit("close_file", target)
+
         def settle():
             registrar._pending.discard(key)
+            if registrar._waiting and not registrar._pending:
+                registrar.register(registrar._waiting.pop(0))
 
         try:
-            self._core.QTimer.singleShot(0, restore_and_close)
-            self._core.QTimer.singleShot(SETTLE_DELAY_MS, settle)
+            if self._split_for_editor():
+                core.QTimer.singleShot(0, open_then_close)
+            else:
+                if not self._emit("open_file", target, True):
+                    return False
+                core.QTimer.singleShot(0, restore_and_close)
+            self._pending.add(key)
+            core.QTimer.singleShot(SETTLE_DELAY_MS, settle)
         except Exception:
             self._pending.discard(key)
         logger.info("Data file queued for the GUI project: %s", target)
         return True
+
+    def _split_for_editor(self):
+        # type: () -> bool
+        """Queue the split that gives the editor a tile of its own (9.x).
+
+        True when the GUI's "Split right" action of a view in a tile was
+        queued: the new tile is the active one when the editor opens, and
+        the close removes it again, the other views untouched. False on
+        6.0/7.0 (no tiles; PySide2, no ``Q_ARG``), when no view is in a
+        tile (an empty tile takes the editor and gets its placeholder
+        back), and when the action is not found: the caller then opens
+        the editor over what is in front.
+
+        The action is triggered by a zero timer of Qt's own with the
+        action as receiver: no Python on the stack when the GUI splits,
+        and no wrapper kept.
+        """
+        core = self._core
+        if getattr(core, "Q_ARG", None) is None:
+            return False
+        try:
+            for dock in self._docks():
+                if not _is_visible(dock) or not _in_tile(dock):
+                    continue
+                if object_name(dock).startswith(PLACEHOLDER_DOCK_PREFIX):
+                    continue
+                action = self._split_action(dock)
+                if action is not None:
+                    core.QTimer.singleShot(0, action, core.SLOT(TRIGGER_SLOT))
+                    return True
+        except Exception as e:
+            logger.debug("No tile could be split for the editor: %s", e)
+        return False
+
+    def _split_action(self, dock):
+        # type: (object) -> object
+        """The dock's "Split right" action, from its title bar menu; None if absent."""
+        for menu in dock.findChildren(self._widgets.QMenu):
+            for action in menu.actions():
+                if str(action.text()) == SPLIT_ACTION_TEXT:
+                    return action
+        return None
 
     def _restore_views(self, before):
         # type: (set) -> None
