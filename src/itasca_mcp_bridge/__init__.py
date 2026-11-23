@@ -36,6 +36,7 @@ def start(
     port=9001,
     mode="auto",
     auto_upgrade=True,
+    view_tracking=True,
 ):
     """Start the Itasca MCP Bridge server.
 
@@ -53,7 +54,18 @@ def start(
             before starting. Best-effort: any network or pip failure falls
             back to starting the installed version. Also disabled by the
             environment variable ITASCA_MCP_BRIDGE_AUTO_UPGRADE=0.
+        view_tracking: Follow which plots and data files are open in the
+            GUI, and report modal dialogs. Pass False to start without it,
+            for instance to rule it out when the GUI crashes: the bridge
+            then does not watch the GUI's widgets. Execution is unaffected;
+            tool responses then carry no GUI activity.
     """
+    # Only a non-default choice is passed on, so that a start() that never
+    # mentions it keeps working across a self-upgrade in either direction.
+    options = {}
+    if not view_tracking:
+        options["view_tracking"] = False
+
     if auto_upgrade:
         from . import upgrade
 
@@ -80,6 +92,7 @@ def start(
                         port=port,
                         mode=mode,
                         auto_upgrade=False,
+                        **options
                     )
 
     from . import runtime
@@ -88,4 +101,5 @@ def start(
         host=host,
         port=port,
         mode=mode,
+        **options
     )
