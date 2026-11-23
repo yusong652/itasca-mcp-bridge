@@ -6,6 +6,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.16] - 2026-11-23
+
+### Added
+- `start(view_tracking=False)` starts the bridge without GUI activity
+  tracking. The tracker keeps walking the GUI's widgets for as long as
+  the bridge runs, and a FLAC3D 9.8 user traced a GUI crash to that walk
+  (itasca-mcp #227) that we could not reproduce; this is the supported
+  way to rule it out. Tool responses then carry no plot, data-file or
+  dialog events; execution is unaffected. The default is unchanged.
+  - Verified live on PFC 7.00 and PFC 9.8, started from source: off, no
+    tracker is installed and creating and deleting a plot reports
+    nothing; after `stop()` and a plain `start()` in the same session the
+    same plot is reported as opened and closed. Not run on FLAC3D.
+
 ## [0.6.15] - 2026-11-18
 
 ### Fixed
