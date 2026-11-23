@@ -194,6 +194,11 @@ ANNOUNCEMENTS = {
         "would not open from the Project pane. Your view now stays where it is.",
         "If the middle pane is ever stuck on '[select content]', click once inside it.",
     ),
+    "0.6.16": (
+        "New: itasca_mcp_bridge.start(view_tracking=False) starts without "
+        "following your plots, data files and dialogs. Try it if the program "
+        "window crashes while the bridge is running.",
+    ),
 }
 
 
