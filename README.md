@@ -134,6 +134,11 @@ the installed version, call `start(auto_upgrade=False)` or set the
 environment variable `ITASCA_MCP_BRIDGE_AUTO_UPGRADE=0`. Corporate
 mirrors can be configured with `ITASCA_MCP_PIP_INDEX_URL`.
 
+`start(view_tracking=False)` starts the bridge without GUI activity
+tracking, for instance to rule it out when the GUI crashes: tool
+responses then carry no plot, data-file or dialog events. Execution is
+unaffected.
+
 After a self-upgrade the banner is followed by a short "What's new" list
 of the release highlights you just received; call
 `itasca_mcp_bridge.whats_new()` to reprint it anytime.

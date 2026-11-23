@@ -345,6 +345,19 @@ class TestStartDelegation:
         assert recorded["mode"] == "console"
         assert recorded["auto_upgrade"] is False
         assert recorded["upgraded_from"] == itasca_mcp_bridge.__version__
+        # An option the caller did not use is not passed across versions.
+        assert "view_tracking" not in recorded
+
+    def test_view_tracking_off_reaches_the_runtime(self, monkeypatch):
+        import itasca_mcp_bridge
+        from itasca_mcp_bridge import runtime
+
+        recorded = {}
+        monkeypatch.setattr(runtime, "start", lambda **kwargs: recorded.update(kwargs))
+
+        itasca_mcp_bridge.start(auto_upgrade=False, view_tracking=False)
+
+        assert recorded["view_tracking"] is False
 
     def test_env_disable_skips_check_entirely(self, monkeypatch):
         import itasca_mcp_bridge

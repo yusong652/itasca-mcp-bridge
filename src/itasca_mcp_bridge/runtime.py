@@ -447,6 +447,7 @@ def start(
     host="localhost",
     port=9001,
     mode="auto",
+    view_tracking=True,
 ):
     """Start the bridge server and task pump. See `itasca_mcp_bridge.start`."""
     global _runtime
@@ -617,11 +618,16 @@ def start(
             logger.warning("Console capture not installed: {}".format(e))
         # Which plots and data files the person has open, into the same
         # history. Same terms as the capture: GUI only, never fails the start.
-        from .console import install_view_tracking
-        try:
-            logger.info("View tracking: %s", install_view_tracking(itasca_server.context.console_history))
-        except Exception as e:
-            logger.warning("View tracking not installed: {}".format(e))
+        # Off on request: it keeps walking the GUI's widgets for as long as
+        # the bridge runs, and the person has to be able to rule it out.
+        if view_tracking:
+            from .console import install_view_tracking
+            try:
+                logger.info("View tracking: %s", install_view_tracking(itasca_server.context.console_history))
+            except Exception as e:
+                logger.warning("View tracking not installed: {}".format(e))
+        else:
+            logger.info("View tracking: off (start(view_tracking=False))")
     elif mode == "gui":
         # Raise before the banner: a failed start should not print one.
         raise RuntimeError(
