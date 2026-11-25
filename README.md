@@ -83,6 +83,13 @@ body is a JSON object carrying a `request_id`; the JSON response echoes the
 | `execute_code` | Run a snippet in the running task's `__main__` (sync REPL) | `code`, `timeout_ms` |
 | `console_history` | Read what the person typed and did in the GUI since the last call | `limit` |
 
+Code sent through `execute_code` or `execute_task` passes each FISH
+definition block (`fish define` / `fish operator` / legacy bare `define`,
+through its terminating `end`) whole, in one `itasca.command()` string. Fed
+line by line, the engine stops at its interactive FISH prompt and the bridge
+answers nothing, `/health` included, until the block is completed in the
+engine console.
+
 ## Quick Start
 
 Run inside the product's Python (GUI IPython console or console CLI):
