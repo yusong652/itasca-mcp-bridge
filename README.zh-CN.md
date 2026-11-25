@@ -70,11 +70,6 @@ JSON 响应回显同一个 `request_id`。服务端→客户端门铃通过一�
 | `interrupt_task` | 请求优雅中断运行中的任务 | `task_id` |
 | `execute_code` | 在运行中任务的 `__main__` 里执行片段（同步 REPL） | `code`、`timeout_ms` |
 
-通过 `execute_code` 或 `execute_task` 执行的代码，须把每个 FISH 定义块
-（`fish define` / `fish operator` / 旧式裸 `define`，直到收尾的 `end`）完整放进
-一个 `itasca.command()` 字符串。逐行发送会让引擎停在交互式 FISH 提示符，在该
-定义块于引擎控制台补全之前，bridge 不响应任何请求，包括 `/health`。
-
 ## 快速开始
 
 在产品的 Python 环境中运行（GUI IPython 控制台或控制台 CLI）：
@@ -167,6 +162,7 @@ Itasca MCP Bridge Server
 | 端口被占用 | `itasca_mcp_bridge.start(port=9002)`，并把 MCP 客户端的 bridge 地址指向 `http://localhost:9002` |
 | 连接失败 | 确认 bridge 正在运行且端口可达，查看 `.itasca-mcp-bridge/bridge.log` |
 | 无法执行任务 / MCP 无法连接 | 若执行工具返回 `ok=false`、`error.code=bridge_unavailable`、`error.details.reason=cannot connect to bridge service`，请确认 `itasca_mcp_bridge.start()` 正在运行，并检查 MCP 客户端的 bridge 地址是否一致 |
+| 某次 `itasca.command()` 之后所有请求都无响应，包括 `/health` | 引擎停在交互式 FISH 提示符等待函数体：FISH 定义块被逐行发送了。在引擎控制台把定义块补全，bridge 即恢复响应。每个定义块（`fish define` / `fish operator` / 旧式裸 `define`，直到收尾的 `end`）须完整放进一个 `itasca.command()` 字符串 |
 
 ## 与 MCP 服务端的关系
 
