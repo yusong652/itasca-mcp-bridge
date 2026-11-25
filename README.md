@@ -189,6 +189,7 @@ Itasca MCP Bridge Server
 | Port in use | `itasca_mcp_bridge.start(port=9002)`, then point your MCP client's bridge URL at `http://localhost:9002` |
 | Connection failed | Confirm the bridge is running and the port is reachable; see `.itasca-mcp-bridge/bridge.log` |
 | No task execution / MCP cannot connect | If execution tools return `ok=false`, `error.code=bridge_unavailable`, `error.details.reason=cannot connect to bridge service`, confirm `itasca_mcp_bridge.start()` is running and your MCP client's bridge URL matches |
+| Every request hangs, `/health` included, after an `itasca.command()` call | The engine is waiting at its interactive FISH prompt for a function body: a FISH definition block was fed line by line. Complete the block in the engine console and the bridge answers again. Pass each definition block (`fish define` / `fish operator` / legacy bare `define`, through its `end`) whole, in one `itasca.command()` string |
 
 ## Relationship to MCP servers
 
