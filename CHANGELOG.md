@@ -6,6 +6,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.17] - 2026-11-26
+
+### Fixed
+- A task whose process died mid-run (the product closed, crashed or was
+  killed) came back after a restart as `pending` and stayed there:
+  `check_task_status` kept answering `pending` for a script that would
+  never run again. A restored task has no Future, so nothing could move
+  it to a terminal state. The restore step already turned `running` into
+  `failed`, but a task killed mid-run is normally recorded as `pending`:
+  the runner flips the in-memory status when the script starts and
+  `tasks.json` is only rewritten on the next save. Both states are now
+  restored as `failed`, with the error "The bridge stopped before this
+  task finished".
+  - Verified live on a PFC3D 9 console in a container, started from
+    source: a long cycling task was checked once (`running`, with
+    `tasks.json` on the host saying `pending`), the container was killed
+    and started again, and the task then read as `failed` with that
+    error and the 87 lines of output flushed by the earlier check. Not
+    run on a GUI build or on 6.0/7.0.
+  - Unchanged: output written after the last status check and still in
+    the 8 KB file buffer is lost on a hard kill, and such a task has no
+    end time.
+
+### Documentation
+- Both READMEs gain a Troubleshooting row for a FISH definition block fed
+  to `itasca.command()` line by line, which leaves the engine waiting in
+  interactive FISH mode and every request hanging, `/health` included.
+  The rule that a block goes into one string lived only in the MCP tool
+  descriptions, so a client posting to the HTTP API directly never read
+  it (itasca-mcp #250).
+
 ## [0.6.16] - 2026-11-23
 
 ### Added

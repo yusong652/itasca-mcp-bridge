@@ -199,6 +199,10 @@ ANNOUNCEMENTS = {
         "following your plots, data files and dialogs. Try it if the program "
         "window crashes while the bridge is running.",
     ),
+    "0.6.17": (
+        "A task cut off when the program closed or crashed now shows as failed "
+        "after a restart; it used to show as pending for good.",
+    ),
 }
 
 
