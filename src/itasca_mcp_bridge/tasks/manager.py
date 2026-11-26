@@ -23,6 +23,9 @@ from ..utils import path_utils
 # Module logger
 logger = logging.getLogger("itasca-mcp-bridge")
 
+# Error reported for a task restored from disk in a non-terminal state.
+UNFINISHED_TASK_ERROR = "The bridge stopped before this task finished"
+
 
 class TaskManager:
     """
@@ -245,13 +248,19 @@ class TaskManager:
         # type: (Dict[str, Any]) -> Optional[ScriptTask]
         """Restore a ScriptTask from persisted data.
 
-        Running tasks are marked as failed since they can't be resumed.
+        A task the previous process left unfinished is marked as failed: it
+        has no Future here, so nothing would ever move it to a terminal
+        state. That covers "pending" as well as "running", because a task
+        that started running is still recorded as "pending" on disk until
+        the next save.
         """
         try:
-            if task_data.get("status") == "running":
+            if task_data.get("status") in ("pending", "running"):
                 task_data["status"] = "failed"
+                if not task_data.get("error"):
+                    task_data["error"] = UNFINISHED_TASK_ERROR
                 logger.warning(
-                    "Marked previously running task {} as failed (cannot resume)".format(
+                    "Marked unfinished task {} as failed (cannot resume)".format(
                         task_data.get("task_id")
                     )
                 )
